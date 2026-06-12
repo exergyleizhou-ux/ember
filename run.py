@@ -28,6 +28,10 @@ SCANNER = TOOLKIT / "scanner" / "scanner.py"
 PAYLOADS = TOOLKIT / "payloads" / "engine.py"
 NETWORK = TOOLKIT / "network" / "scan.py"
 AI_PROBE = TOOLKIT / "ai" / "probe.py"
+AI_INJECT = TOOLKIT / "ai" / "inject.py"
+PROMPT_LIB = TOOLKIT / "ai" / "prompt_library.py"
+FABLE5 = TOOLKIT / "ai" / "fable5.py"
+SENDER = TOOLKIT / "ai" / "sender.py"
 REPORTS = TOOLKIT / "reports"
 
 def run_step(name: str, cmd: list, timeout: int = 300) -> dict:
@@ -127,7 +131,9 @@ def main():
     ap.add_argument("--target", "-t", required=True, help="目标 URL (如 http://localhost:8080/api/v1)")
     ap.add_argument("--full", action="store_true", help="全量扫描 (含 payload 注入 + 网络 + AI)")
     ap.add_argument("--liberation", action="store_true", help="红队模式: L1B3RT4S 越狱库 + 目标模型自动选 payload")
-    ap.add_argument("--model", "-m", default="Claude", help="目标模型 (用于 liberation 模式)")
+    ap.add_argument("--live", action="store_true", help="实弹! 真发 payload 到 AI 端点 (需 API key)")
+    ap.add_argument("--model", "-m", default="deepseek", help="目标模型 (用于 liberation/live 模式)")
+    ap.add_argument("--count", "-n", type=int, default=3, help="发送 payload 数量")
     ap.add_argument("--quick", action="store_true", help="快速模式 (只跑 API auth + escalation)")
     ap.add_argument("--output", "-o", default="reports", help="报告输出目录")
     args = ap.parse_args()
@@ -190,7 +196,13 @@ def main():
                 [str(SCANNER), "-t", target, "--spec", spec, "--quick"],
                 timeout=60))
     
-    # ── Layer 6: HTML 报告 ──
+    # ── Layer 6: 实弹! (--live) ──
+    if args.live:
+        sender_args = [str(SENDER), "-m", args.model, "--auto", str(args.count), "--live"]
+        results.append(run_step(f"🔥 实弹: {args.model} ({args.count} payloads)",
+            sender_args, timeout=120))
+    
+    # ── Layer 7: HTML 报告 ──
     html_path = gen_html(report_dir, results, target)
     
     # 终端总结

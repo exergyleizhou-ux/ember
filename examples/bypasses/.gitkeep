@@ -1,0 +1,2 @@
+# Ember bypass case logs
+# 每次 --live 实弹发送后自动生成 <model>-<technique>-<timestamp>.md
