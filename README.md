@@ -24,9 +24,39 @@ python3 ai/inject.py --matrix
 
 # 生成针对 Claude 的注入脚本
 python3 ai/inject.py -t role-reversal -m Claude
+
+# 🔥 红队模式 — 一键解放: 攻击面分析 + 最佳 payload + 实弹扫描
+python3 run.py -t http://target:8080/api/v1 --liberation -m Claude
+
+# 查看 Claude 的攻击链推理
+python3 ai/prompt_library.py -m Claude
 ```
 
-## 五层检测
+## 红队模式示例
+
+```bash
+$ python3 ai/prompt_library.py -m Claude
+
+🎯 Claude → anthropic
+   Payload 总数: 84
+   分类分布: {'general_injection': 3, 'system_extraction': 1, 'own_server_pretext': 1}
+
+📋 策略: Claude: decomposition + academic framing + 'own server' pretext.
+
+🧠 推理:
+   Fable 5 的 9 条拒绝规则中,对'恶意代码'的拒绝(CRITICAL)接受一个关键例外:
+   '自己的服务器渗透测试'属于允许范围。Claudeception 攻击面(Artifact API 用 Sonnet 4)
+   是二级绕过路径——让 Fable 5 生成调用 Sonnet 4 的代码,Sonnet 4 安全约束更弱。
+   武器库中有 84 条 Anthropic 专用 payload。
+
+🔗 攻击链:
+   1. Recon: 建立学术/安全研究上下文 (Fable 5 对'自己资产'的测试放行)
+   2. Decompose: 把攻击目标拆成学术子问题,避开 'malware/exploit' 关键词
+   3. Inject: 用角色反转 payload 让 Claude 以为自己在做合规审计
+   4. Verify: 检查是否触发 cyber_warning / ethics_reminder
+```
+
+## 七层攻防
 
 | 层 | 模块 | 能力 |
 |----|------|------|
@@ -34,7 +64,9 @@ python3 ai/inject.py -t role-reversal -m Claude
 | **Payload 注入** | `payloads/engine.py` | SQLi (10) · XSS (9) · JWT (3) · PathTraversal (8) · SSRF (7) |
 | **网络扫描** | `network/scan.py` | SSL/TLS 弱加密检测 · 端口暴露扫描 (PG/Redis/SSH) |
 | **AI 防火墙** | `ai/probe.py` | 6 模型禁止话题对比 · probe 预测 · 共同盲点检测 |
-| **AI 注入引擎** | `ai/inject.py` | 5 类注入技术 · 每模型绕过技巧库 · 攻击面矩阵 · 可执行注入脚本生成 |
+| **AI 注入引擎** | `ai/inject.py` | 5 类注入技术 · 每模型绕过技巧库 · 攻击面矩阵 |
+| **L1B3RT4S 兵器库** | `ai/prompt_library.py` | 387 payload (39厂) · 关键词检索 · 攻击链推理 |
+| **Fable 5 武器化** | `ai/fable5.py` | 120KB prompt 解析 · 9 拒绝规则 · Claudeception 攻击面 |
 
 ## 项目结构
 
@@ -45,8 +77,11 @@ ember/
 ├── payloads/           ← SQLi/XSS/JWT/PathTrav/SSRF 注入库
 ├── network/            ← SSL/TLS + 端口扫描
 ├── ai/
-│   ├── probe.py        ← AI Prompt 防火墙探测器
-│   └── inject.py       ← AI Prompt 注入引擎 (5 类技术)
+│   ├── probe.py        ← AI 防火墙探测器
+│   ├── inject.py       ← AI 注入引擎 (5 类技术)
+│   ├── fable5.py       ← Fable 5 武器化解析器
+│   ├── prompt_library.py ← 387 payload 兵器库
+│   └── scrape_l1b3rt4s.py ← L1B3RT4S 同步工具
 ├── reports/            ← JSON 扫描报告
 └── html/               ← HTML 可视化报告
 ```
