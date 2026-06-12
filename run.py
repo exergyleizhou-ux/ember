@@ -12,7 +12,11 @@
   2. Payload 注入 (payloads/) — SQLi, XSS, JWT attack, path traversal, SSRF
   3. 网络扫描 (network/)     — SSL/TLS, 端口暴露, Docker 审计
   4. AI Prompt 分析 (ai/)    — 模型禁止话题对比、probe 测试、盲点检测
-  5. HTML 报告 — 所有结果汇总为一页
+  5. AI 注入引擎 (ai/)       — 5类注入技术 + 攻击面矩阵
+  6. Fable 5 武器化 (ai/)    — 120KB prompt 解析 + 9条拒绝规则绕过
+  7. HTML 报告 — 所有结果汇总为一页
+
+  --liberation: 红队模式 — L1B3RT4S 越狱库 + 目标模型自动选 payload
 """
 
 import argparse, json, os, sys, subprocess, time
@@ -121,7 +125,9 @@ details{{margin:10px 0}}
 def main():
     ap = argparse.ArgumentParser(description="绿洲安全工具包 — 统一启动器")
     ap.add_argument("--target", "-t", required=True, help="目标 URL (如 http://localhost:8080/api/v1)")
-    ap.add_argument("--full", action="store_true", help="全量扫描 (含 payload 注入 + 网络)")
+    ap.add_argument("--full", action="store_true", help="全量扫描 (含 payload 注入 + 网络 + AI)")
+    ap.add_argument("--liberation", action="store_true", help="红队模式: L1B3RT4S 越狱库 + 目标模型自动选 payload")
+    ap.add_argument("--model", "-m", default="Claude", help="目标模型 (用于 liberation 模式)")
     ap.add_argument("--quick", action="store_true", help="快速模式 (只跑 API auth + escalation)")
     ap.add_argument("--output", "-o", default="reports", help="报告输出目录")
     args = ap.parse_args()
@@ -167,7 +173,24 @@ def main():
             [str(AI_PROBE), "--attack-surface"],
             timeout=20))
     
-    # ── Layer 5: HTML 报告 ──
+    # ── Layer 5: Liberation mode (红队) ──
+    if args.liberation:
+        model = args.model
+        results.append(run_step(f"🔥 Liberation: Fable 5 攻击面 ({model})",
+            [str(FABLE5), "--summary"],
+            timeout=15))
+        results.append(run_step(f"🔥 Liberation: 最佳 payload ({model})",
+            [str(PROMPT_LIB), "--model", model],
+            timeout=30))
+        results.append(run_step(f"🔥 Liberation: 攻击面矩阵",
+            [str(AI_INJECT), "--matrix"],
+            timeout=15))
+        if args.target and "localhost" not in args.target:
+            results.append(run_step(f"🔫 实弹扫描 {target}",
+                [str(SCANNER), "-t", target, "--spec", spec, "--quick"],
+                timeout=60))
+    
+    # ── Layer 6: HTML 报告 ──
     html_path = gen_html(report_dir, results, target)
     
     # 终端总结

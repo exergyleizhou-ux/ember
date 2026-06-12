@@ -4,3 +4,4 @@ reports/*.json
 html/*.html
 .env
 .DS_Store
+.l1b3rt4s_cache.json
