@@ -14,10 +14,13 @@ dev = [
     "ruff>=0.5",
 ]
 
-# Ember 是直接运行的脚本集合,不是可导入的包。
-# 显式声明无包可构建,避免 setuptools 在 flat-layout 下因多个顶层目录报错。
+# 只打包"守"侧(扫描器/注入引擎/网络)。显式列出包既解决 flat-layout 的
+# 自动发现歧义,又把"攻"侧(ai/ web/ exploits/)排除在分发物之外。
 [tool.setuptools]
-py-modules = []
+packages = ["scanner", "payloads", "network"]
+
+[project.scripts]
+ember-scan = "scanner.scanner:main"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

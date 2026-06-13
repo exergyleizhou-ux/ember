@@ -1,0 +1,2 @@
+[console_scripts]
+ember-scan = scanner.scanner:main

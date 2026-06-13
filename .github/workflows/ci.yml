@@ -27,3 +27,10 @@ jobs:
         run: ruff check scanner payloads network run.py tests
       - name: Test
         run: pytest -q
+      - name: Smoke installed CLI
+        # 验证可分发性:console 入口点能跑,且授权护栏对未授权远程退出非零
+        run: |
+          ember-scan --help
+          if ember-scan -t https://prod.example.com --quick; then
+            echo "授权护栏未拦截未授权远程目标" && exit 1
+          fi

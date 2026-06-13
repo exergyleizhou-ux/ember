@@ -7,6 +7,22 @@
 **守**: 对自己的 API/网络/主机做全自动漏洞扫描，一键出 HTML 报告。
 **攻**: AI 注入引擎内含 5 类提取技术 + 5 模型绕过技巧库，基于 Pliny 社区验证过的真实攻击手法。
 
+## 安装
+
+守侧扫描器可作为独立 CLI 安装(只打包守侧,不含攻侧):
+
+```bash
+pipx install git+https://github.com/exergyleizhou-ux/ember.git
+ember-scan --target http://localhost:8080/api/v1
+```
+
+或从源码:
+
+```bash
+git clone https://github.com/exergyleizhou-ux/ember.git && cd ember
+pip install -e .            # 装出 ember-scan 命令
+```
+
 ## 快速开始
 
 ```bash
