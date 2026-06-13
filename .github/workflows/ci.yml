@@ -24,7 +24,7 @@ jobs:
           pip install -e ".[dev]"
       - name: Lint
         # 仅对已纳入工程化的"守"侧表面强制 lint;ai/ web/ exploits/ 暂为遗留代码
-        run: ruff check scanner payloads network run.py tests
+        run: ruff check scanner payloads network run.py tests examples
       - name: Test
         run: pytest -q
       - name: Smoke installed CLI
