@@ -224,6 +224,20 @@ class _Handler(BaseHTTPRequestHandler):
             self._send(200, {"results": []})
             return
 
+        if path == "/account/update":
+            # MASS-ASSIGNMENT 探测点
+            try:
+                payload = json.loads(body) if body else {}
+            except ValueError:
+                payload = {}
+            if "mass_assignment" in self.vulns:
+                # 脆弱: 把客户端传入的所有字段原样落库并回显(含特权字段)
+                self._send(200, dict(payload))
+            else:
+                # 安全: 只接受白名单字段,忽略 role/is_admin/balance 等
+                self._send(200, {"name": payload.get("name", "")})
+            return
+
         if path == "/admin/thing":
             # OPS-ESCALATE 探测点: 默认仅 ops/admin 放行,开关打开则不校验角色
             role = _role_from_token(self._token())
