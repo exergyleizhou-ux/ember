@@ -1,0 +1,23 @@
+version: "3.9"
+# Ember 本地攻防靶场 — 一键拉起 DVWA + Juice Shop
+# docker compose -f targets/docker-compose.yml up -d
+# DVWA: http://localhost:4280
+# Juice Shop: http://localhost:3000
+# 初始化 DVWA: http://localhost:4280/setup.php → Create/Reset Database
+
+services:
+  dvwa:
+    image: vulnerables/web-dvwa:latest
+    container_name: ember-dvwa
+    ports:
+      - "4280:80"
+    environment:
+      - MYSQL_PASS=m0r3-s3cur3-dvwa
+
+  juice-shop:
+    image: bkimminich/juice-shop:latest
+    container_name: ember-juice
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=unsafe
