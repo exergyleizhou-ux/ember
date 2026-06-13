@@ -297,6 +297,7 @@ import time, json, re
 from typing import Optional, List, Dict, Tuple
 from urllib.request import Request, urlopen, HTTPError
 from urllib.error import URLError
+from urllib.parse import quote
 
 class WebAttacker:
     """授权 Web 攻击引擎 — 带请求分析的 payload 发射器."""
@@ -310,7 +311,7 @@ class WebAttacker:
              headers: Optional[Dict] = None, params: Optional[Dict] = None) -> Tuple[int, str, float]:
         url = self.target + path
         if params:
-            url += "?" + "&".join(f"{k}={v}" for k, v in params.items())
+            url += "?" + "&".join(f"{quote(str(k))}={quote(str(v))}" for k, v in params.items())
         req = Request(url, data=data.encode() if data else None, method=method)
         req.add_header("Content-Type", "application/x-www-form-urlencoded")
         if headers:
