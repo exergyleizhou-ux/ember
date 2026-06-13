@@ -47,6 +47,15 @@ class BudgetGuard:
         self.record(identity, cost)
         return self.is_over_budget(identity)
 
+    def active_identities(self) -> int:
+        """当前窗口内仍有事件的去重身份数(供指标导出)。"""
+        count = 0
+        for ident in list(self._events.keys()):
+            self._evict(ident)
+            if self._events[ident]:
+                count += 1
+        return count
+
     def stats(self, identity: str) -> dict:
         """当前窗口内该身份的用量(供导出到 SIEM/Prometheus)。"""
         self._evict(identity)

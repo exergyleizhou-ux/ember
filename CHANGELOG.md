@@ -4,6 +4,16 @@
 
 ## [Unreleased]
 
+### LLM 防御 Wave 4(运行时可观测层)
+- `examples/dual_llm/agent_bus.py`:多 agent **运行时**审计(静态 `llm-multi-agent-message-audit`
+  的运行时补充)。在 agent 间消息传递时拦一道,组合 taint + injection_guard + jailbreak_guard,
+  policy=block/warn/off。挡 prompt 注入蠕虫(Morris-II 类)。
+- `examples/dual_llm/budget_metrics.py`:把 BudgetGuard 用量导出为 Prometheus 指标
+  (queries/cost/over_budget/active_identities)。**聚合指标不按身份打 label**(避免基数爆炸);
+  `prometheus_client` 为可选依赖,缺失则降级 no-op。
+- 两者咬合:agent_bus 的审计事件可经 on_event 喂给指标/SIEM。
+- `BudgetGuard.active_identities()`;dev 依赖加 prometheus-client(仅测试)。
+
 ### LLM 防御 Wave 3(多 agent + 滥用监测)+ SARIF ATLAS 标签
 - 静态检测器 `llm-multi-agent-message-audit`(LLM01:2025 / AML.T0061,high):
   未净化的 LLM 输出/外部数据转发给另一个 agent = prompt 自我复制/蠕虫面
