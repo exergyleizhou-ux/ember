@@ -52,3 +52,11 @@ class OutputExfilDetector(_StaticLLMDetector):
     owasp = "LLM02:2025"
     atlas = "AML.T0057"
     severity = "medium"
+
+
+@register
+class CodeExecDetector(_StaticLLMDetector):
+    name = "llm-code-exec"
+    owasp = "LLM05:2025"      # Improper Output Handling
+    atlas = "AML.T0050"      # Command and Scripting Interpreter
+    severity = "critical"    # LLM 输出被自动执行 = RCE

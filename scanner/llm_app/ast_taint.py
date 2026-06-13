@@ -37,6 +37,11 @@ TOOL_SINK_MARKERS = (
     "subprocess.run", "subprocess.call", "subprocess.Popen", "subprocess.check_output",
     "execute", "executemany", "send_email", "http_request",
 )
+# 严格的"代码执行"sink 子集:LLM 输出流到这里 = RCE 面(区别于 ext→工具的 confused deputy)
+CODE_EXEC_MARKERS = (
+    "eval", "exec", "os.system", "os.popen",
+    "subprocess.run", "subprocess.call", "subprocess.Popen", "subprocess.check_output",
+)
 RENDER_SINK_MARKERS = (
     "st.markdown", "st.write", "st.html", "markdown", "render_template",
     "render_template_string", "display", "HTML", "to_html", "Markdown",
@@ -163,6 +168,11 @@ class _ScopeAnalyzer:
                     "output", "llm-output-exfil", call.lineno,
                     "llm-output", name,
                     f"LLM 输出未净化就渲染到 {name}(markdown/HTML 外泄面)"))
+            if _matches(name, CODE_EXEC_MARKERS) and "llm" in arg_colors:
+                self.flows.append(_Flow(
+                    "code-exec", "llm-code-exec", call.lineno,
+                    "llm-output", name,
+                    f"LLM 输出流入代码执行 {name}(自动执行模型生成代码 → RCE 面)"))
 
     def _apply_assign(self, targets, value):
         colors = self.expr_taint(value)
