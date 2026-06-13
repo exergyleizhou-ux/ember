@@ -301,7 +301,13 @@ if __name__ == "__main__":
             # 单轮: 取第一个变体发送
             variants_data = result.get("variants", {})
             if isinstance(variants_data, dict):
-                payloads = list(variants_data.values())[:5]
+                # 优先级: 试更可能成功的变体
+                keys = list(variants_data.keys())
+                # 把 base64/leetspeak/rot13 挪到前面
+                preferred = [k for k in keys if any(x in k for x in ['base64','leet','rot13'])]
+                rest = [k for k in keys if k not in preferred]
+                ordered_keys = preferred + rest
+                payloads = [variants_data[k] for k in ordered_keys[:5]]
             else:
                 payloads = variants_data[:5] if isinstance(variants_data, list) else [args.weapon_payload]
 
