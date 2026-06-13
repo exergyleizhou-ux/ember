@@ -4,6 +4,17 @@
 
 ## [Unreleased]
 
+### LLM 应用静态扫描(Wave 1b,OWASP LLM01/02 + MITRE ATLAS)
+- 新增**源码 target 模式** `ember-scan --source DIR`:扫 LLM agent 的 Python 源码。
+  检测器有了 `mode`(http=打活目标 / static=扫源码),按 `--target`/`--source` 自动启用。
+- `scanner/llm_app/ast_taint.py`:intraprocedural 双色污点分析(外部数据 / LLM 输出)。
+- 三个静态检测器(`scanner/detectors/llm_static.py`):
+  - `llm-indirect-injection-sink`(ATLAS AML.T0051.001):外部数据未净化进 LLM 调用
+  - `llm-tool-confused-deputy`(AML.T0053):外部数据流到 eval/exec/os.system/subprocess/SQL
+  - `llm-output-exfil`(AML.T0057):LLM 输出未净化渲染到 markdown/HTML
+- Detector 加 `atlas` 字段;`--list-detectors` 加 MODE 列。
+- 20 个测试(分析器单测 + 检测器双向集成);诚实局限:intraprocedural、签名匹配。
+
 ### 认证流自动取 token
 - `--login-url` / `--login-body` / `--login-method` / `--token-path`:扫描前走登录流
   自动获取 token 并喂给 JWT 等需鉴权的检测器,免去手填 `--token`。

@@ -29,9 +29,11 @@ def get(name: str):
 
 class Detector:
     name: str = ""        # 唯一标识 → SARIF ruleId
-    owasp: str = ""       # 对应 OWASP API 类别,如 "API2:2023"
+    owasp: str = ""       # 对应 OWASP 类别,如 "API2:2023" / "LLM01:2025"
+    atlas: str = ""       # 对应 MITRE ATLAS technique,如 "AML.T0051.001"
     severity: str = "medium"
     slow: bool = False    # 慢检测器(--quick 时跳过)
+    mode: str = "http"    # "http"=打活目标 / "static"=扫源码,决定何时启用
 
     def run(self, ctx):
         raise NotImplementedError
