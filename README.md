@@ -127,6 +127,7 @@ python3 scanner/scanner.py -t http://localhost:8080/api/v1 \
 - `--rate N` 每秒最多 N 次请求(0=不限),`--retries N` 连接失败退避重试
 - `--sarif PATH` 输出 SARIF 2.1.0,可直接接 CI / GitHub Code Scanning
 - `--verbose` 打印每次请求的 debug 日志
+- `--list-detectors` 列出所有检测器;`--enable a,b` / `--disable c,d` 按需启停
 
 ## 测试 & CI
 

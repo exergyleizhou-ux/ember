@@ -38,6 +38,13 @@ def engine_mod():
     return _load("ember_engine", "payloads/engine.py")
 
 
+@pytest.fixture(scope="session")
+def detectors_mod(scanner_mod):
+    """scanner/detectors 注册表包(scanner_mod 已把包目录放上 path)。"""
+    import importlib
+    return importlib.import_module("detectors")
+
+
 @pytest.fixture()
 def vuln_server():
     """启动一个完全安全的靶机,测试结束后关闭。"""
