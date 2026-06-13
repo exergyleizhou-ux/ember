@@ -33,6 +33,7 @@ from dataclasses import dataclass, field
 # 本地导入
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from web.spider import AsyncSpider
+from web.spider_v4 import ParamHunter, AttackSurface, spider_report_to_chain_input
 from web.session import SessionManager, JWTTester
 from web.analyzer import AsyncAnalyzer
 from web.exploit import ExploitGenerator, Vulnerability
@@ -80,6 +81,40 @@ class AttackChain:
 
     async def _step(self, name: str) -> None:
         print(f"\n{'━'*60}\n  {name}\n{'━'*60}")
+
+    # ── 辅助: 丰富侦察结果 (ParamHunter + AttackSurface) ──
+    async def _enrich_recon(self, recon: Dict) -> Tuple[List[Dict], List[Dict]]:
+        """在 recon 之后运行参数发现 + 攻击面分类，返回 (prioritized_endpoints, param_hits)."""
+        endpoints = recon.get("endpoints", [])
+        param_hits = []
+
+        if endpoints:
+            print(f"\n  🔍 ParamHunter: 对 {len(endpoints)} 端点探测隐蔽参数...")
+            hunter = ParamHunter(self.target, concurrency=min(self.concurrency, 5))
+            param_hits = await hunter.hunt(endpoints)
+            if param_hits:
+                print(f"    ✅ 发现 {len(param_hits)} 个隐蔽参数")
+                # 把发现注入回 endpoints
+                for ep in endpoints:
+                    for p in param_hits:
+                        if p.endpoint == ep["path"]:
+                            if p.param not in ep.get("params", []):
+                                ep.setdefault("params", []).append(p.param)
+
+            print(f"\n  🎯 AttackSurface: 攻击面分类...")
+            surface = AttackSurface.classify(endpoints, param_hits)
+            critical = [s for s in surface if s["risk"] == "CRITICAL"]
+            high = [s for s in surface if s["risk"] == "HIGH"]
+            print(f"    CRITICAL={len(critical)} HIGH={len(high)}")
+            for ep in critical[:3]:
+                print(f"    🔴 {ep['path']} [{','.join(ep['tags'])}] → {ep['injection_surfaces']}")
+
+            # 攻击面排序后的端点
+            prioritized = surface
+        else:
+            prioritized = endpoints
+
+        return prioritized, param_hits
 
     # ── 链 1: Recon ──
     async def chain_recon(self) -> Dict:
@@ -177,19 +212,37 @@ class AttackChain:
         recon = await self.chain_recon()
         endpoints = recon.get("endpoints", [])
 
-        # 2. Deep Scan
-        findings = await self.chain_deep_scan(endpoints)
+        # 1.5 ParamHunter + AttackSurface → 优先化目标
+        prioritized, param_hits = await self._enrich_recon(recon)
+        # 提取 top CRITICAL + HIGH
+        if prioritized and isinstance(prioritized[0], dict) and "risk" in prioritized[0]:
+            top_endpoints = [s for s in prioritized if s["risk"] in ("CRITICAL", "HIGH")][:15]
+            if not top_endpoints:
+                top_endpoints = prioritized[:15]
+        else:
+            top_endpoints = endpoints[:30]
 
-        # 3. Exploit generation (from vulns found)
+        # 2. Auth bypass (if login provided)
+        if login_path and creds:
+            await self.chain_auth_bypass(login_path, creds)
+
+        # 3. Deep Scan (优先化后的端点)
+        findings = await self.chain_deep_scan(top_endpoints)
+
+        # 4. Exploit generation (from vulns found)
         vuln_list = findings.get("findings", [])
         if vuln_list:
             await self.chain_exploit_gen(vuln_list)
+
+        # 5. WAF bypass test on top target
+        if top_endpoints:
+            await self.chain_waf_bypass(top_endpoints[:5])
 
         self.report.total_time = time.monotonic() - t0
 
         print(f"\n{'═'*60}")
         print(f"🏁 Full-Auto 完成: {self.report.total_time:.1f}s")
-        print(f"  端点: {recon.get('endpoints_found',0)} | 漏洞: {self.report.vulnerabilities_found} | Exploit: {self.report.exploits_generated}")
+        print(f"  端点: {recon.get('endpoints_found',0)} | 隐蔽参数: {len(param_hits)} | 漏洞: {self.report.vulnerabilities_found} | Exploit: {self.report.exploits_generated}")
 
         return self.report.to_dict()
 

@@ -269,13 +269,70 @@ if __name__ == "__main__":
     ap.add_argument("--concurrency", "-c", type=int, default=10)
     ap.add_argument("--max-pages", type=int, default=500)
     ap.add_argument("-o", "--output", default=None)
+    ap.add_argument("--hunt-params", action="store_true",
+                   help="Arjun 风格隐蔽参数发现 (80+ 常见参数)")
+    ap.add_argument("--classify", action="store_true",
+                   help="攻击面风险评分 + 注入面识别")
+    ap.add_argument("--js-render", action="store_true",
+                   help="Playwright JS 渲染 SPA (需 pip install playwright)")
     args = ap.parse_args()
 
-    spider = AsyncSpider(args.target, max_depth=args.depth,
-                         concurrency=args.concurrency, max_pages=args.max_pages)
-    report = asyncio.run(spider.crawl())
+    async def _main():
+        from spider_v4 import ParamHunter, AttackSurface, spider_report_to_chain_input
 
-    if args.output:
-        with open(args.output, "w") as f:
-            json.dump(report, f, indent=2, ensure_ascii=False)
-        print(f"📄 {args.output}")
+        spider = AsyncSpider(args.target, max_depth=args.depth,
+                             concurrency=args.concurrency, max_pages=args.max_pages)
+        report = await spider.crawl()
+
+        # ── 参数发现 ──
+        param_hits = []
+        if args.hunt_params:
+            print(f"\n🔍 参数猎人: 对 {len(report['endpoints'])} 端点探测隐蔽参数...")
+            hunter = ParamHunter(args.target, concurrency=args.concurrency)
+            param_hits = await hunter.hunt(report["endpoints"])
+            print(f"  发现 {len(param_hits)} 个隐蔽参数")
+
+        # ── 攻击面分析 ──
+        if args.classify:
+            print(f"\n🎯 攻击面分析...")
+            surface = AttackSurface.classify(report["endpoints"], param_hits)
+            critical = [s for s in surface if s["risk"] == "CRITICAL"]
+            high = [s for s in surface if s["risk"] == "HIGH"]
+            print(f"  CRITICAL: {len(critical)}  HIGH: {len(high)}  MEDIUM: {len([s for s in surface if s['risk']=='MEDIUM'])}  LOW: {len([s for s in surface if s['risk']=='LOW'])}")
+            for ep in critical[:5]:
+                print(f"  🔴 {ep['score']:3d} [{','.join(ep['tags']):20s}] {ep['path']}")
+            for ep in high[:5]:
+                print(f"  🟠 {ep['score']:3d} [{','.join(ep['tags']):20s}] {ep['path']}")
+            report["attack_surface"] = surface
+
+        # ── JS 渲染 ──
+        if args.js_render:
+            try:
+                from spider_v4 import JSRenderer
+                print(f"\n🌐 JS 渲染: {args.target}")
+                renderer = JSRenderer(headless=True)
+                html, links = await renderer.render(args.target)
+                print(f"  渲染后找到 {len(links)} 个链接 (含 SPA 动态路由)")
+                report["js_rendered_links"] = links[:100]
+                await renderer.close()
+            except ImportError:
+                print("  ⚠️ playwright 未安装. pip install playwright && playwright install")
+
+        # ── 输出 ──
+        if args.classify:
+            chain_input = spider_report_to_chain_input(report, report.get("attack_surface", []))
+            report["chain_input"] = chain_input
+            top = chain_input.get("top_targets", [])[:5]
+            if top:
+                print(f"\n📤 可直喂 chain.py 的 top 目标:")
+                for t in top:
+                    print(f"  → {t['path']} [{t['risk']}] injection={t.get('injection_surfaces',[])}")
+
+        if args.output:
+            with open(args.output, "w") as f:
+                json.dump(report, f, indent=2, ensure_ascii=False)
+            print(f"\n📄 {args.output}")
+
+        return report
+
+    asyncio.run(_main())

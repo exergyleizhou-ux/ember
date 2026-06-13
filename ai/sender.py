@@ -15,6 +15,7 @@ Ember 实弹引擎 —— 把 prompt_library 中的 payload 实际发给 AI 模�
 
 import json, os, sys, time, uuid
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Optional, List, Dict, Tuple
 from urllib.request import Request, urlopen, HTTPError
 from urllib.error import URLError
