@@ -14,6 +14,11 @@ dev = [
     "ruff>=0.5",
 ]
 
+# Ember 是直接运行的脚本集合,不是可导入的包。
+# 显式声明无包可构建,避免 setuptools 在 flat-layout 下因多个顶层目录报错。
+[tool.setuptools]
+py-modules = []
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
