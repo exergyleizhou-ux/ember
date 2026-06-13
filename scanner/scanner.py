@@ -151,6 +151,8 @@ class Scanner:
         self.jwt: List[Dict] = []
         self.admin: List[Dict] = []
         self.rated: List[Dict] = []
+        # 静态检测器的源码:[(path, code), ...]
+        self.source_files: List[Tuple[str, str]] = []
         self._lock = threading.Lock()
         self._started = datetime.now(timezone.utc)
         # 限速: rate=每秒最大请求数;0 = 不限。防止打挂目标。
@@ -302,9 +304,36 @@ class Scanner:
 
 
 # ═══════════════════════════════════════════════════════════════════════
+def _collect_py_files(root: str) -> List[Tuple[str, str]]:
+    """收集目录下所有 .py 源码(跳过常见无关目录)。"""
+    skip = {".git", "__pycache__", ".venv", "venv", "node_modules", ".tox", "build", "dist"}
+    out = []
+    if os.path.isfile(root) and root.endswith(".py"):
+        roots = [(os.path.dirname(root), [os.path.basename(root)])]
+    else:
+        roots = None
+    if roots is None:
+        for dirpath, dirnames, filenames in os.walk(root):
+            dirnames[:] = [d for d in dirnames if d not in skip]
+            for fn in filenames:
+                if fn.endswith(".py"):
+                    p = os.path.join(dirpath, fn)
+                    try:
+                        out.append((p, open(p, encoding="utf-8", errors="replace").read()))
+                    except OSError:
+                        pass
+    else:
+        for d, fns in roots:
+            for fn in fns:
+                p = os.path.join(d, fn)
+                out.append((p, open(p, encoding="utf-8", errors="replace").read()))
+    return out
+
+
 def main():
     ap = argparse.ArgumentParser(description="绿洲 API 安全扫描器 v2")
-    ap.add_argument("--target", "-t", default=None, help="API base URL")
+    ap.add_argument("--target", "-t", default=None, help="API base URL(HTTP 检测器)")
+    ap.add_argument("--source", default=None, help="LLM 应用源码目录(静态检测器,扫 *.py)")
     ap.add_argument("--spec", default=None, help="openapi.yaml path")
     ap.add_argument("--report", "-o", default=None, help="输出 JSON 报告")
     ap.add_argument("--sarif", default=None, help="输出 SARIF 2.1.0 报告(供 CI / GitHub Code Scanning)")
@@ -334,45 +363,52 @@ def main():
     import detectors
 
     if args.list_detectors:
-        print(f"{'NAME':<16}{'OWASP':<12}{'SEVERITY':<10}SLOW")
+        print(f"{'NAME':<22}{'OWASP':<12}{'MODE':<8}{'SEVERITY':<10}SLOW")
         for d in detectors.iter_detectors():
-            print(f"{d.name:<16}{d.owasp:<12}{d.severity:<10}{'yes' if d.slow else ''}")
+            print(f"{d.name:<22}{d.owasp:<12}{d.mode:<8}{d.severity:<10}{'yes' if d.slow else ''}")
         return
 
-    if not args.target:
-        ap.error("--target/-t 必填(除非 --list-detectors)")
+    if not args.target and not args.source:
+        ap.error("需要 --target/-t(打活目标)或 --source(扫源码),至少一个")
 
-    # 授权护栏: 非本机目标必须显式授权
-    from scope import UnauthorizedTargetError, parse_scope, require_authorized
-    try:
-        require_authorized(args.target, parse_scope(args.scope))
-    except UnauthorizedTargetError as e:
-        sys.exit(f"⛔ 授权检查失败:\n{e}")
-
-    # 找 spec
-    if args.spec:
-        sp = args.spec
-    else:
-        for c in ["backend/api/openapi.yaml",
-                  os.path.expanduser("~/ai-data-marketplace-loginfix/backend/api/openapi.yaml")]:
-            if os.path.exists(c):
-                sp = c
-                break
-        else:
-            sys.exit("找不到 openapi.yaml。用 --spec")
-
-    print(f"📄 {sp}")
-    public, jwt, admin, rated = OpenAPI.load(sp)
-    print(f"   {OpenAPI.summary(public, jwt, admin, rated)} 端点")
-    print(f"   目标: {args.target}\n")
-
-    scanner = Scanner(args.target, concurrency=args.concurrency,
+    modes = set()
+    scanner = Scanner(args.target or "", concurrency=args.concurrency,
                       rate=args.rate, retries=args.retries)
-    scanner.public, scanner.jwt, scanner.admin, scanner.rated = public, jwt, admin, rated
-    scanner.token = args.token
+
+    # ── HTTP 模式: 授权 + 装 spec ──
+    if args.target:
+        from scope import UnauthorizedTargetError, parse_scope, require_authorized
+        try:
+            require_authorized(args.target, parse_scope(args.scope))
+        except UnauthorizedTargetError as e:
+            sys.exit(f"⛔ 授权检查失败:\n{e}")
+
+        if args.spec:
+            sp = args.spec
+        else:
+            for c in ["backend/api/openapi.yaml",
+                      os.path.expanduser("~/ai-data-marketplace-loginfix/backend/api/openapi.yaml")]:
+                if os.path.exists(c):
+                    sp = c
+                    break
+            else:
+                sys.exit("找不到 openapi.yaml。用 --spec")
+        print(f"📄 {sp}")
+        public, jwt, admin, rated = OpenAPI.load(sp)
+        print(f"   {OpenAPI.summary(public, jwt, admin, rated)} 端点")
+        print(f"   目标: {args.target}\n")
+        scanner.public, scanner.jwt, scanner.admin, scanner.rated = public, jwt, admin, rated
+        scanner.token = args.token
+        modes.add("http")
+
+    # ── 静态模式: 收集源码 ──
+    if args.source:
+        scanner.source_files = _collect_py_files(args.source)
+        print(f"📁 源码: {args.source}  ({len(scanner.source_files)} 个 .py 文件)\n")
+        modes.add("static")
 
     # 认证流自动取 token(优先于手填 --token)
-    if args.login_url:
+    if args.target and args.login_url:
         login_body = json.loads(args.login_body) if args.login_body else {}
         tok = scanner.acquire_token(args.login_url, login_body, args.login_method, args.token_path)
         if tok:
@@ -385,6 +421,8 @@ def main():
     disable = {x.strip() for x in args.disable.split(",") if x.strip()}
     selected = []
     for d in detectors.iter_detectors():
+        if d.mode not in modes:          # http 检测器需 --target;static 需 --source
+            continue
         if enable and d.name not in enable:
             continue
         if d.name in disable:

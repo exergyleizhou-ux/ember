@@ -79,7 +79,8 @@ $ python3 ai/prompt_library.py -m Claude
 | **API 扫描** | `scanner/` (检测器注册表) | **18 个检测器,覆盖 OWASP API Top 10 (API1–API9)**:鉴权绕过 · 权限提升 · 限流 · IDOR · 信息泄露 · JWT(alg=none/空签名/未校验) · mass assignment · open redirect · SSRF(带外) · Host 头注入 · 安全响应头 · CORS · GraphQL introspection · 调试暴露 · TRACE · verbose 报错。`--list-detectors` 查看 |
 | **Payload 注入** | `payloads/engine.py` | SQLi (10) · XSS (9) · JWT (3) · PathTraversal (8) · SSRF (7) |
 | **网络扫描** | `network/scan.py` | SSL/TLS 弱加密检测 · 端口暴露扫描 (PG/Redis/SSH) |
-| **LLM 应用防御** | `examples/dual_llm/` | **dual-LLM 架构 + taint 跟踪**抗 prompt injection(运行时防御原语,守你自己的 agent);见 `docs/defense/` |
+| **LLM 应用防御(运行时)** | `examples/dual_llm/` | **dual-LLM 架构 + taint 跟踪**抗 prompt injection(运行时防御原语,守你自己的 agent);见 `docs/defense/` |
+| **LLM 应用扫描(静态)** | `scanner/llm_app/` | `ember-scan --source DIR` 扫 agent 源码:间接注入面 · confused deputy · 输出外泄(`llm-*` 检测器,OWASP LLM01/02 + MITRE ATLAS) |
 | **AI 防火墙** | `ai/probe.py` | 6 模型禁止话题对比 · probe 预测 · 共同盲点检测 |
 | **AI 注入引擎** | `ai/inject.py` | 5 类注入技术 · 每模型绕过技巧库 · 攻击面矩阵 |
 | **L1B3RT4S 兵器库** | `ai/prompt_library.py` | 387 payload (39厂) · 关键词检索 · 攻击链推理 |
