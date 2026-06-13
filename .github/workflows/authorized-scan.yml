@@ -1,0 +1,54 @@
+name: Authorized Scan
+
+# 手动触发的授权扫描:对你拥有授权的目标跑 ember-scan,产出 SARIF,
+# 上传为构建产物并(若开启 Code Scanning)推到仓库 Security 标签。
+#
+# 安全:scanner 的授权护栏要求非本机目标必须落在 scope 内,否则非零退出。
+# 你必须对 target 拥有书面授权再运行本工作流。
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "目标 API base URL"
+        required: true
+      scope:
+        description: "授权 allowlist(逗号分隔的主机/域名)"
+        required: true
+      spec_path:
+        description: "仓库内 openapi.yaml 路径"
+        required: true
+
+permissions:
+  contents: read
+  security-events: write   # 上传到 Code Scanning 需要
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e .
+      - name: Run ember-scan
+        run: |
+          ember-scan \
+            -t "${{ inputs.target }}" \
+            --scope "${{ inputs.scope }}" \
+            --spec "${{ inputs.spec_path }}" \
+            --rate 20 --retries 3 \
+            --sarif ember.sarif
+      - name: Upload SARIF artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ember-sarif
+          path: ember.sarif
+      - name: Upload to Code Scanning
+        if: always()
+        continue-on-error: true   # 私有仓库未开 GHAS 时不致命
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: ember.sarif

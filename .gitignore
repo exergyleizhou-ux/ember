@@ -5,3 +5,11 @@ html/*.html
 .env
 .DS_Store
 .l1b3rt4s_cache.json
+
+# build artifacts
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.ruff_cache/
+*.sarif

@@ -18,9 +18,16 @@
 - **可分发**:守侧打包为 pip/pipx 可安装,暴露 `ember-scan` 命令(攻侧排除在分发物外)。
 - **CI**(`.github/workflows/ci.yml`):Python 3.9/3.12 上跑 ruff + pytest + 入口点冒烟。
 
+- **新检测**(`scanner/web_checks.py`):安全响应头缺失(HSTS/CSP/X-Content-Type-Options/
+  X-Frame-Options)与 CORS 配置(回显任意 Origin、`*`+凭证)。被动检查,不发攻击 payload。
+- **授权扫描工作流**(`.github/workflows/authorized-scan.yml`):手动触发,对授权目标跑
+  ember-scan,SARIF 上传为产物并推送 GitHub Code Scanning。
+
 ### Changed
 - `run.py` 增加 `--spec`,消除硬编码的个人 openapi 路径。
 - `network`:弱加密判定抽成纯函数 `is_weak_cipher()`。
 
 ### Fixed
 - `scanner._req` 连接级错误现在退避重试而非直接放弃。
+- **`scanner.py` main() 汇总行 `KeyError: 'duration_seconds'`**:把顶层字段误当成
+  stats 字段,导致 CLI 每次在收尾崩溃、`--sarif` 永不写出。加了 CLI 端到端回归测试堵住此口。

@@ -27,6 +27,8 @@ def _load(module_name: str, relative_path: str):
 @pytest.fixture(scope="session")
 def scanner_mod():
     """scanner/scanner.py — API 扫描引擎。"""
+    # 扫描器内部有同级导入(web_checks 等),按 CLI 运行方式把包目录放上 path
+    sys.path.insert(0, str(ROOT / "scanner"))
     return _load("ember_scanner", "scanner/scanner.py")
 
 
