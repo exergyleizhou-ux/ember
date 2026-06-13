@@ -1,0 +1,88 @@
+{
+  "target": "绿洲 AI Data Marketplace (localhost:8080)",
+  "date": "2026-06-13",
+  "environment": "development (APP_ENV=development)",
+  "verified_findings": [
+    {
+      "severity": "CRITICAL",
+      "type": "JWT Forgery",
+      "file": "config.go:57",
+      "verified": true,
+      "detail": "JWT_SECRET=dev-insecure-change-me (22 bytes, below RFC 7518 minimum). Forged admin JWT → full access to /admin/kyc, /admin/audit-logs, /admin/transactions, /admin/withdrawals, /admin/datasets, /admin/anomalies, /admin/account-deletions, /admin/compute/jobs, /admin/settlement-outbox",
+      "impact": "Complete admin takeover. Attacker can view all users, approve/reject KYC, manage datasets, approve withdrawals, access audit logs."
+    },
+    {
+      "severity": "CRITICAL",
+      "type": "Refresh Denylist Fail-Open",
+      "file": "service.go:179",
+      "verified": true,
+      "detail": "When Redis is unreachable, refresh-token revocation is silently skipped. A stolen/leaked refresh token can be endlessly replayed by killing Redis (or during any Redis outage).",
+      "impact": "Session hijacking persistence. Logout is ineffective during Redis downtime."
+    },
+    {
+      "severity": "CRITICAL",
+      "type": "Rate Limiter Fail-Open",
+      "file": "ratelimit.go:33 + middleware/ratelimit.go:32",
+      "verified": true,
+      "detail": "When Redis is unreachable, rate limiting is completely disabled. 25 consecutive login attempts all returned 401 (not 429) after Redis was stopped, vs. rate-limited to 10/min when Redis is up.",
+      "impact": "Brute-force attacks unhindered during Redis outage. Account enumeration and credential stuffing become viable."
+    },
+    {
+      "severity": "HIGH",
+      "type": "Public Metrics Endpoint",
+      "file": "server.go",
+      "verified": true,
+      "detail": "GET /metrics returns full Prometheus metrics (Go runtime, HTTP latencies, DB pool stats) without authentication.",
+      "impact": "Internal performance data, error rates, and traffic patterns exposed to anyone."
+    },
+    {
+      "severity": "HIGH",
+      "type": "Full API Blueprint Public",
+      "file": "docs module",
+      "verified": true,
+      "detail": "GET /docs/openapi.yaml serves complete 59KB OpenAPI 3.0 spec including all admin routes, request/response schemas, and module structure.",
+      "impact": "Complete attack surface blueprint for reconnaissance without any access."
+    },
+    {
+      "severity": "HIGH",
+      "type": "Environment Leak",
+      "file": "server.go:271",
+      "verified": true,
+      "detail": "GET /api/v1/ping returns {\"env\":\"development\",\"pong\":true}. Reveals deployment stage.",
+      "impact": "Attacker knows they are in development mode, where dev routes (/dev/mark-paid, /compute/purchase) are active."
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Dev Routes Mounted",
+      "file": "payment/router.go:25, server.go:471",
+      "verified": true,
+      "detail": "POST /payments/dev/mark-paid and POST /datasets/:id/compute/purchase are mounted (devMode=true). With admin forged token, these could manipulate payment/compute state.",
+      "impact": "Free payments and compute entitlements in dev mode."
+    },
+    {
+      "severity": "LOW",
+      "type": "JWT Key Too Short",
+      "file": "config.go:57",
+      "verified": true,
+      "detail": "HMAC key is 22 bytes, below RFC 7518 Section 3.2 minimum of 32 bytes for HS256. pyjwt flagged InsecureKeyLengthWarning.",
+      "impact": "Reduced brute-force resistance for the signing key."
+    },
+    {
+      "severity": "INFO",
+      "type": "Anomaly SQL Errors",
+      "file": "anomaly module (startup)",
+      "verified": true,
+      "detail": "Two anomaly rules failed on startup: repeated_failure and bulk_modification with SQL error \"syntax error at or near LIMIT\".",
+      "impact": "Some anomaly detection rules are non-functional."
+    }
+  ],
+  "exploit_chain": {
+    "step1": "Spider v4 → map 100+ endpoints via /docs/openapi.yaml",
+    "step2": "Register account (no CAPTCHA, no email verification)",
+    "step3": "Extract JWT, identify HS256 algorithm",
+    "step4": "Guess/read JWT_SECRET from source/config (dev-insecure-change-me default)",
+    "step5": "Forge admin JWT with role=admin → full system access",
+    "step6": "Kill Redis → replay refresh tokens endlessly",
+    "step7": "Kill Redis → brute-force logins without rate limit"
+  }
+}
