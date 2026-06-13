@@ -98,10 +98,8 @@ class AsyncAnalyzer:
         if abs(len(true_body) - len(false_body)) > 50:
             verdicts.append({"level": "boolean_blind"})
 
-        # Level 5: Time blind
-        s_time, _, time_elapsed = await self._req("GET", path, params={param: "1' AND SLEEP(5)--"}, session=session)
-        if time_elapsed > 4.0:
-            verdicts.append({"level": "time_blind", "elapsed": round(time_elapsed, 2)})
+        # Level 5: Time blind (skipped in bulk — too slow)
+        # s_time, _, time_elapsed = await self._req("GET", path, params={param: "1' AND SLEEP(5)--"}, session=session)
 
         return {
             "vulnerable": len(verdicts) > 0,
@@ -191,8 +189,7 @@ class AsyncAnalyzer:
                 path = ep.get("path", "/")
                 param = ep.get("params", ["q"])[0] if ep.get("params") else "q"
                 tasks.append(self.verify_sqli(path, param, session))
-                tasks.append(self.verify_ssti(path, param, session))
-                tasks.append(self.verify_nosql(path, param, session))
+                # SSTI + NoSQL skipped in bulk for speed; available via --verify all
 
             results = await asyncio.gather(*tasks, return_exceptions=True)
             for i, r in enumerate(results):
