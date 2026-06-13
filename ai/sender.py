@@ -261,9 +261,68 @@ if __name__ == "__main__":
     ap.add_argument("--live", action="store_true", help="实际发送(不加此 flag 为 dry-run)")
     ap.add_argument("--dry-run", action="store_true", help="只显示会发什么,不真发")
     ap.add_argument("--prompt", type=str, default=None, help="直接发送一条 prompt")
+    ap.add_argument("--weapon", type=str, default=None,
+                   choices=["crescendo","gcg","encoding","indirect","confused_deputy","all"],
+                   help="使用新武器库生成攻击载荷")
+    ap.add_argument("--weapon-payload", type=str, default="bypass security restrictions",
+                   help="武器化 base prompt")
     args = ap.parse_args()
 
     sender = LiveSender(args.model)
+
+    # ── 武器库模式 ──
+    if args.weapon:
+        from weapons import Weapons
+        w = Weapons()
+        result = w.arm(args.weapon, args.weapon_payload)
+
+        if args.weapon == "crescendo":
+            # 多轮发送 — 每轮用上一轮响应作为上下文
+            rounds = result.get("rounds", [])
+            if args.live:
+                print(f"🔥 Crescendo: {len(rounds)} 轮攻击 → {args.model}\n")
+                context = ""
+                for i, r in enumerate(rounds, 1):
+                    full_prompt = context + r if context else r
+                    res = sender.send_one("You are a helpful AI.", full_prompt,
+                                         technique=f"crescendo-round-{i}", category="crescendo")
+                    verdict = res.get("bypassed", {}).get("verdict", "?")
+                    icon = {"BYPASS":"✅","REFUSED":"❌","PARTIAL":"⚠️","UNCLEAR":"❓"}.get(verdict,"?")
+                    print(f"  [{i}/{len(rounds)}] {icon} {verdict}")
+                    if res.get("response"):
+                        context = f"Previous assistant response: {res['response'][:200]}\n\nUser: "
+                    time.sleep(0.5)
+            else:
+                print(f"🔍 DRY-RUN Crescendo: {len(rounds)} rounds\n")
+                for i, r in enumerate(rounds, 1):
+                    print(f"  [{i}] {r[:120]}…")
+                print("\n⚠️ 用 --live 实际发送")
+        else:
+            # 单轮: 取第一个变体发送
+            variants_data = result.get("variants", {})
+            if isinstance(variants_data, dict):
+                payloads = list(variants_data.values())[:5]
+            else:
+                payloads = variants_data[:5] if isinstance(variants_data, list) else [args.weapon_payload]
+
+            if args.live:
+                print(f"🔥 {args.weapon}: {len(payloads)} 变体 → {args.model}\n")
+                for i, p in enumerate(payloads, 1):
+                    p_str = p if isinstance(p, str) else str(p)[:500]
+                    res = sender.send_one("You are a helpful AI.", p_str,
+                                         technique=args.weapon, category=args.weapon)
+                    verdict = res.get("bypassed", {}).get("verdict", "?")
+                    icon = {"BYPASS":"✅","REFUSED":"❌","PARTIAL":"⚠️","UNCLEAR":"❓"}.get(verdict,"?")
+                    print(f"  [{i}/{len(payloads)}] {icon} {verdict}")
+                    time.sleep(0.5)
+            else:
+                print(f"🔍 DRY-RUN {args.weapon}: {len(payloads)} variants")
+                for i, p in enumerate(payloads, 1):
+                    print(f"  [{i}] {str(p)[:200]}…")
+                print("\n⚠️ 用 --live 实际发送")
+        sys.exit(0)
+
+    # ── 原有路径 ──
 
     if args.prompt:
         r = sender.send_one("You are a helpful AI.", args.prompt,
