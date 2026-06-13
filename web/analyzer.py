@@ -213,7 +213,15 @@ if __name__ == "__main__":
     ap.add_argument("--verify", choices=["sqli","ssti","nosql","all"], default="all")
     ap.add_argument("--spider-report", default=None)
     ap.add_argument("-o", "--output", default=None)
+    ap.add_argument("--scope", default="", help="授权目标 allowlist(逗号分隔);本机始终允许")
     args = ap.parse_args()
+
+    # 授权护栏: 非本机目标必须显式授权(防误用 / 问责)
+    import os as _os
+    import sys as _sys
+    _sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
+    from safety_gate import enforce_url_target
+    enforce_url_target(args.target, args.scope, "web/analyzer.py")
 
     analyzer = AsyncAnalyzer(args.target)
 

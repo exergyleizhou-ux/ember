@@ -4,6 +4,14 @@
 
 ## [Unreleased]
 
+### 攻击入口授权护栏(防误用 / 问责)
+- 新增 `safety_gate.py`:把守侧的授权逻辑接到攻击入口。纯约束 + 操作者日志,不增强攻击力。
+- 接入:`web/chain.py` / `web/spider.py` / `web/analyzer.py` 加 `--scope`,非本机目标
+  不在授权范围则拒绝退出;`ai/sender.py --live` 加 `--i-am-authorized` 实弹门。
+- 所有通过的调用记录操作者(谁/对谁/何时)到 `~/.ember-operator.log` + stderr。
+- 此前这些入口可直接、无授权地朝任意 Web 目标 / 真实模型开火,且 `run.py` 的护栏一绕就没;
+  现在直接调用也必须过门。
+
 ### 注入检测器家族(补守侧最大盲区)
 - 此前传统 Web 注入类只有 `payloads/engine` 的探测,没有 dual-tested 的守侧检测器。
   现补 5 个主动检测器(`scanner/detectors/injection.py`,mode=http):

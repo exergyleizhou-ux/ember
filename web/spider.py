@@ -275,7 +275,15 @@ if __name__ == "__main__":
                    help="攻击面风险评分 + 注入面识别")
     ap.add_argument("--js-render", action="store_true",
                    help="Playwright JS 渲染 SPA (需 pip install playwright)")
+    ap.add_argument("--scope", default="", help="授权目标 allowlist(逗号分隔);本机始终允许")
     args = ap.parse_args()
+
+    # 授权护栏: 非本机目标必须显式授权(防误用 / 问责)
+    import os as _os
+    import sys as _sys
+    _sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
+    from safety_gate import enforce_url_target
+    enforce_url_target(args.target, args.scope, "web/spider.py")
 
     async def _main():
         from spider_v4 import ParamHunter, AttackSurface, spider_report_to_chain_input
