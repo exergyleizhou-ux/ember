@@ -465,9 +465,10 @@ def main():
 
     if args.sarif:
         from sarif import to_sarif
+        meta = {d.name: {"owasp": d.owasp, "atlas": d.atlas} for d in detectors.iter_detectors()}
         os.makedirs(os.path.dirname(args.sarif) or ".", exist_ok=True)
         with open(args.sarif, "w") as fp:
-            json.dump(to_sarif(rep), fp, indent=2, ensure_ascii=False)
+            json.dump(to_sarif(rep, detector_meta=meta), fp, indent=2, ensure_ascii=False)
         print(f"📄 SARIF: {args.sarif}")
 
 

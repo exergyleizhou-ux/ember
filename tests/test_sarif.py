@@ -82,3 +82,19 @@ def test_empty_report(sarif):
     doc = sarif.to_sarif({"target": "http://localhost", "findings": []})
     assert doc["runs"][0]["results"] == []
     assert doc["runs"][0]["tool"]["driver"]["rules"] == []
+
+
+def test_detector_meta_adds_atlas_owasp_tags(sarif, sample_report):
+    meta = {"ops-escalate": {"owasp": "API5:2023", "atlas": "AML.T0049"}}
+    doc = sarif.to_sarif(sample_report, detector_meta=meta)
+    rule = next(r for r in doc["runs"][0]["tool"]["driver"]["rules"]
+                if r["id"] == "ops-escalate")
+    assert rule["properties"]["atlas"] == "AML.T0049"
+    assert "API5:2023" in rule["properties"]["tags"]
+    assert "AML.T0049" in rule["properties"]["tags"]
+
+
+def test_no_meta_means_no_properties(sarif, sample_report):
+    doc = sarif.to_sarif(sample_report)  # 不传 meta → 规则不带 properties
+    rule = doc["runs"][0]["tool"]["driver"]["rules"][0]
+    assert "properties" not in rule

@@ -46,6 +46,11 @@ RENDER_SINK_MARKERS = (
     "st.markdown", "st.write", "st.html", "markdown", "render_template",
     "render_template_string", "display", "HTML", "to_html", "Markdown",
 )
+# agent 间消息 sink:未净化数据转发给另一个 agent = prompt 自我复制/蠕虫面
+AGENT_MSG_MARKERS = (
+    "send_to_agent", "send_message", "send_task", "dispatch", "publish",
+    "enqueue", "delegate", "handoff", "call_agent", "broadcast", "route_to",
+)
 SANITIZER_MARKERS = (
     "schema_extract", "whitelist_match", "human_confirm", "assert_trusted",
     "model_validate", "parse_obj", "parse_raw", "model_validate_json",
@@ -173,6 +178,13 @@ class _ScopeAnalyzer:
                     "code-exec", "llm-code-exec", call.lineno,
                     "llm-output", name,
                     f"LLM 输出流入代码执行 {name}(自动执行模型生成代码 → RCE 面)"))
+            if _matches(name, AGENT_MSG_MARKERS) and ("llm" in arg_colors or "ext" in arg_colors):
+                src = "llm-output" if "llm" in arg_colors else "external-data"
+                what = "LLM 输出" if "llm" in arg_colors else "外部数据"
+                self.flows.append(_Flow(
+                    "multi-agent", "llm-multi-agent-message-audit", call.lineno,
+                    src, name,
+                    f"未净化的{what}转发给另一个 agent {name}(prompt 自我复制/蠕虫面)"))
 
     def _apply_assign(self, targets, value):
         colors = self.expr_taint(value)

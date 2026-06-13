@@ -4,6 +4,15 @@
 
 ## [Unreleased]
 
+### LLM 防御 Wave 3(多 agent + 滥用监测)+ SARIF ATLAS 标签
+- 静态检测器 `llm-multi-agent-message-audit`(LLM01:2025 / AML.T0061,high):
+  未净化的 LLM 输出/外部数据转发给另一个 agent = prompt 自我复制/蠕虫面
+  (`ast_taint` 加 agent-message sink 规则)。
+- 运行时守卫 `examples/dual_llm/query_budget.py`:进程内滑动窗口查询/成本预算,
+  抗模型提取(AML.T0024.002)、成本耗尽(T0034)、推理 DoS(T0029)。零依赖,免 Prometheus。
+- **SARIF 输出加 OWASP/ATLAS 标签**:`to_sarif(report, detector_meta=...)` 把每个规则的
+  owasp/atlas 写进 `properties.tags`,供 GitHub Code Scanning / SIEM 直接消费。
+
 ### LLM 防御 Wave 2(Jailbreak + Code Exec)
 - 运行时守卫(`examples/dual_llm/`,纵深防御外层,**只识别不生成**):
   - `jailbreak_guard.py`:识别越狱框架措辞(ATLAS AML.T0054)。不含任何可用越狱 payload。
