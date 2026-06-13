@@ -342,6 +342,57 @@ class Scanner:
             else:
                 self.stats["passed"] += 1
 
+    # ── HTTP 头(被动检查用)──
+    def _get_headers(self, path: str, extra: Optional[Dict] = None) -> Tuple[int, Dict]:
+        """GET 一个端点,返回 (status, response_headers)。失败返回 (0, {})。"""
+        url = f"{self.target}{path}"
+        req = Request(url, method="GET")
+        for k, v in (extra or {}).items():
+            req.add_header(k, v)
+        self._throttle()
+        try:
+            resp = urlopen(req, timeout=self.timeout)
+            return resp.status, dict(resp.headers.items())
+        except HTTPError as e:
+            return e.code, dict(e.headers.items()) if e.headers else {}
+        except URLError:
+            return 0, {}
+
+    # ── 扫描 6: 安全响应头 ──
+    def scan_security_headers(self, probe_path: str = "/"):
+        print("\n🔍 SEC-HEADERS: 安全响应头检测")
+        from web_checks import missing_security_headers
+        status, headers = self._get_headers(probe_path)
+        self.stats["total"] += 1
+        if status == 0:
+            self._add("medium", "sec-headers", probe_path, "GET", "连接失败 (目标不可达?)")
+            self.stats["errors"] += 1
+            return
+        missing = missing_security_headers(headers)
+        if not missing:
+            self.stats["passed"] += 1
+            return
+        for name, desc, sev in missing:
+            self._add(sev, "sec-headers", probe_path, "GET", desc, evidence=name)
+
+    # ── 扫描 7: CORS 配置 ──
+    def scan_cors(self, probe_path: str = "/"):
+        print("\n🔍 CORS: 跨域配置检测")
+        from web_checks import analyze_cors
+        evil = "https://evil.example"
+        status, headers = self._get_headers(probe_path, extra={"Origin": evil})
+        self.stats["total"] += 1
+        if status == 0:
+            self._add("medium", "cors", probe_path, "GET", "连接失败 (目标不可达?)")
+            self.stats["errors"] += 1
+            return
+        issue = analyze_cors(evil, headers)
+        if issue is None:
+            self.stats["passed"] += 1
+            return
+        desc, sev = issue
+        self._add(sev, "cors", probe_path, "GET", desc, evidence=f"Origin: {evil}")
+
     # ── 报告 ──
     def report(self) -> Dict:
         severity_order = {"critical": 0, "high": 1, "medium": 2, "low": 3}
@@ -410,6 +461,8 @@ def main():
             scanner.scan_rate_limits(rated)
             scanner.scan_idor()
         scanner.scan_info_leak(public)
+        scanner.scan_security_headers()
+        scanner.scan_cors()
     except KeyboardInterrupt:
         print("\n⏹  用户中断")
 
@@ -417,7 +470,7 @@ def main():
     rep = scanner.report()
     s = rep["stats"]
     print(f"\n{'═'*60}")
-    print(f"扫描完成: {s['total']} 项检测  {s['duration_seconds']:.0f}s")
+    print(f"扫描完成: {s['total']} 项检测  {rep['duration_seconds']:.0f}s")
     print(f"  ✅ 通过: {s['passed']}    ❌ 漏洞: {s['failed']}    ⚠  错误: {s['errors']}")
 
     if rep["findings"]:

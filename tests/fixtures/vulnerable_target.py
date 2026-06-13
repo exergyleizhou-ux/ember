@@ -62,11 +62,13 @@ class _Handler(BaseHTTPRequestHandler):
         return self.server.vulns
 
     # ── 工具 ──
-    def _send(self, status: int, payload):
+    def _send(self, status: int, payload, headers=None):
         body = json.dumps(payload).encode()
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
+        for k, v in (headers or {}).items():
+            self.send_header(k, v)
         self.end_headers()
         self.wfile.write(body)
 
@@ -109,6 +111,33 @@ class _Handler(BaseHTTPRequestHandler):
                 self._send(200, {"ok": True})
             else:
                 self._send(401, {"error": "missing token"})
+            return
+
+        # 安全响应头检测对照点
+        if path == "/headers/secure":
+            self._send(200, {"ok": True}, headers={
+                "Strict-Transport-Security": "max-age=63072000",
+                "Content-Security-Policy": "default-src 'self'; frame-ancestors 'none'",
+                "X-Content-Type-Options": "nosniff",
+                "X-Frame-Options": "DENY",
+            })
+            return
+        if path == "/headers/insecure":
+            self._send(200, {"ok": True})  # 一个安全头都没有
+            return
+
+        # CORS 检测对照点
+        if path == "/cors/reflect":
+            origin = self.headers.get("Origin", "")
+            self._send(200, {"ok": True}, headers={
+                "Access-Control-Allow-Origin": origin,           # 原样回显 → 脆弱
+                "Access-Control-Allow-Credentials": "true",
+            })
+            return
+        if path == "/cors/safe":
+            self._send(200, {"ok": True}, headers={
+                "Access-Control-Allow-Origin": "https://app.trusted.com",  # 固定可信域
+            })
             return
 
         self._send(404, {"error": "not found"})

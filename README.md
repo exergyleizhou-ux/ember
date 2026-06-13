@@ -76,7 +76,7 @@ $ python3 ai/prompt_library.py -m Claude
 
 | 层 | 模块 | 能力 |
 |----|------|------|
-| **API 扫描** | `scanner/scanner.py` | 鉴权绕过 · 权限提升 · 限流缺失 · IDOR · 信息泄露 |
+| **API 扫描** | `scanner/scanner.py` | 鉴权绕过 · 权限提升 · 限流缺失 · IDOR · 信息泄露 · 安全响应头 · CORS 配置 |
 | **Payload 注入** | `payloads/engine.py` | SQLi (10) · XSS (9) · JWT (3) · PathTraversal (8) · SSRF (7) |
 | **网络扫描** | `network/scan.py` | SSL/TLS 弱加密检测 · 端口暴露扫描 (PG/Redis/SSH) |
 | **AI 防火墙** | `ai/probe.py` | 6 模型禁止话题对比 · probe 预测 · 共同盲点检测 |
