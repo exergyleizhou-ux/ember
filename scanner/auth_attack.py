@@ -54,8 +54,13 @@ PRESETS = {
         "login_path": "/auth/register",
         "login_body": '{"account":"ember-scan@sec.test","account_type":"email","password":"Scanner123!"}',
         "login_method": "POST",
-        "token_extractor": lambda body: (json.loads(body).get("data", {}).get("tokens", {}).get("access_token") if body else None),
+        "token_extractor": lambda body: (
+            (json.loads(body).get("data", {}).get("tokens", {}).get("access_token") if body and body.strip() else None)
+            if body else None
+        ),
         "token_type": "bearer",
+        "fallback_login": "/auth/login",
+        "fallback_body": '{"account":"ember-scan@sec.test","password":"Scanner123!"}',
         "vuln_endpoints": [
             "/orders?role=seller",
             "/sellers/me/withdrawals",
@@ -100,11 +105,12 @@ class AuthAttacker:
             return e.code, e.read().decode(errors="replace")
         except URLError as e:
             return 0, str(e.reason)
+        except Exception as e:
+            return 0, f"unexpected: {e}"
 
     def _prep_session(self):
-        """获取认证令牌."""
+        """获取认证令牌。409(已存在)时自动回退到登录."""
         if not self.preset:
-            print("⚠️ 无靶场预设,跳过认证")
             return
 
         print(f"🔑 登录 {self.preset['login_path']} …")
@@ -116,8 +122,20 @@ class AuthAttacker:
         )
 
         extractor = self.preset.get("token_extractor")
-        if extractor:
+        if extractor and status == 200:
             self.token = extractor(body)
+
+        # 409 = account exists → try login fallback
+        if not self.token and self.preset.get("fallback_login") and status in (409,):
+            print(f"   ⚠️ 注册返回 {status}(已存在),尝试登录…")
+            s, b = self._req(
+                "POST",
+                self.preset["fallback_login"],
+                self.preset.get("fallback_body", self.preset["login_body"]),
+                "application/json",
+            )
+            if s == 200 and extractor:
+                self.token = extractor(b)
         
         if self.token:
             print(f"   ✅ 已认证: {self.token[:24]}…")
