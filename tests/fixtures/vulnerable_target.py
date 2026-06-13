@@ -22,12 +22,52 @@
     server.stop()
 """
 
+import base64
+import hashlib
+import hmac
 import json
 import threading
 import time
 import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
+
+# ── 最小 HS256 JWT(仅靶机用,验证 scanner 的 JWT 检测器)──
+_JWT_SECRET = b"test-target-secret"
+
+
+def _b64u(b: bytes) -> str:
+    return base64.urlsafe_b64encode(b).rstrip(b"=").decode()
+
+
+def _b64u_decode(s: str) -> bytes:
+    return base64.urlsafe_b64decode(s + "=" * (-len(s) % 4))
+
+
+def _hs256(msg: str) -> str:
+    return _b64u(hmac.new(_JWT_SECRET, msg.encode(), hashlib.sha256).digest())
+
+
+def _issue_jwt() -> str:
+    h = _b64u(json.dumps({"alg": "HS256", "typ": "JWT"}).encode())
+    p = _b64u(json.dumps({"sub": "u1", "role": "user", "exp": 9999999999}).encode())
+    return f"{h}.{p}.{_hs256(f'{h}.{p}')}"
+
+
+def _jwt_accepted(token: str, vulns) -> bool:
+    """靶机的 JWT 校验:安全时只接受签名正确的 HS256;漏洞开关放宽对应路径。"""
+    try:
+        h_seg, p_seg, sig = token.split(".")
+        alg = json.loads(_b64u_decode(h_seg)).get("alg")
+    except Exception:
+        return False
+    if alg == "none":
+        return "jwt_alg_none" in vulns
+    if sig == "":
+        return "jwt_unsigned" in vulns
+    if hmac.compare_digest(sig, _hs256(f"{h_seg}.{p_seg}")):
+        return True
+    return "jwt_no_verify" in vulns
 
 # 触发 Ember._analyze 报错检出的 MySQL 风格报错(含 "SQL syntax")
 _SQL_ERROR = (
@@ -111,6 +151,19 @@ class _Handler(BaseHTTPRequestHandler):
                 self._send(200, {"ok": True})
             else:
                 self._send(401, {"error": "missing token"})
+            return
+
+        if path == "/jwt-login":
+            # 颁发一个真实 HS256 JWT,供 scanner 的 JWT 检测器作伪造基准
+            self._send(200, {"token": _issue_jwt()})
+            return
+
+        if path == "/jwt/protected":
+            # JWT 校验点: 安全时拒绝一切伪造,漏洞开关放行对应伪造
+            if _jwt_accepted(self._token(), self.vulns):
+                self._send(200, {"ok": True})
+            else:
+                self._send(401, {"error": "invalid token"})
             return
 
         # 安全响应头检测对照点
