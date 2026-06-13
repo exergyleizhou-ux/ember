@@ -100,14 +100,26 @@ python3 run.py -t http://localhost:8080/api/v1
 python3 run.py -t https://staging.example.com/api/v1 --scope example.com
 ```
 
+## 生产特性(守侧)
+
+```bash
+# 限速防打挂 + 连接重试 + SARIF 输出(供 GitHub Code Scanning)
+python3 scanner/scanner.py -t http://localhost:8080/api/v1 \
+    --rate 20 --retries 3 --sarif reports/ember.sarif --verbose
+```
+
+- `--rate N` 每秒最多 N 次请求(0=不限),`--retries N` 连接失败退避重试
+- `--sarif PATH` 输出 SARIF 2.1.0,可直接接 CI / GitHub Code Scanning
+- `--verbose` 打印每次请求的 debug 日志
+
 ## 测试 & CI
 
 守侧(扫描器/注入引擎/网络)带完整测试,用纯标准库靶机端到端验证
-"已知漏洞必检出、健康端点不误报":
+"已知漏洞必检出、健康端点不误报",并覆盖授权护栏、限速/重试、SARIF、全链路冒烟:
 
 ```bash
 pip install -e ".[dev]"
-pytest -q          # 35 个测试
+pytest -q          # 62 个测试
 ruff check scanner payloads network run.py tests
 ```
 

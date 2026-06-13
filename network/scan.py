@@ -14,6 +14,15 @@ import subprocess
 from datetime import datetime, timezone
 from typing import Dict, List
 
+# 弱加密套件标记(子串匹配,大小写不敏感)
+WEAK_CIPHER_MARKERS = ("RC4", "DES", "3DES", "EXPORT", "NULL", "anon")
+
+
+def is_weak_cipher(cipher_name: str) -> bool:
+    """判断 cipher 名是否命中弱加密标记。纯函数,便于测试。"""
+    name = (cipher_name or "").upper()
+    return any(marker.upper() in name for marker in WEAK_CIPHER_MARKERS)
+
 
 def run(cmd: List[str], timeout: int = 30) -> str:
     try:
@@ -39,11 +48,9 @@ def check_ssl(host: str, port: int = 443) -> Dict:
                 result["cert_issuer"] = cert.get("issuer", [])
                 result["cert_expires"] = cert.get("notAfter", "")
                 # 弱加密检查
-                weak = ["RC4","DES","3DES","EXPORT","NULL","anon"]
                 cipher_name = ssock.cipher()[0]
-                for w in weak:
-                    if w in cipher_name:
-                        result["issues"].append(f"弱加密套件: {cipher_name}")
+                if is_weak_cipher(cipher_name):
+                    result["issues"].append(f"弱加密套件: {cipher_name}")
     except Exception as e:
         result["issues"].append(f"TLS 连接失败: {e}")
     return result

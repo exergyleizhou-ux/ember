@@ -17,6 +17,7 @@
 
 import argparse
 import json
+import logging
 import os
 import sys
 import threading
@@ -31,6 +32,8 @@ try:
     import yaml
 except ImportError:
     sys.exit("需要 PyYAML: pip3 install pyyaml")
+
+log = logging.getLogger("ember.scanner")
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -140,16 +143,32 @@ class OpenAPI:
 class Scanner:
     """主动扫描引擎."""
 
-    def __init__(self, target: str, timeout: int = 15, concurrency: int = 2):
+    def __init__(self, target: str, timeout: int = 15, concurrency: int = 2,
+                 rate: float = 0.0, retries: int = 2):
         self.target = target.rstrip("/")
         self.timeout = timeout
         self.concurrency = concurrency
+        self.retries = retries
         self.buyer_token: Optional[str] = None
         self.ops_token: Optional[str] = None
         self.findings: List[Dict] = []
         self.stats = {"total": 0, "passed": 0, "failed": 0, "errors": 0}
         self._lock = threading.Lock()
         self._started = datetime.now(timezone.utc)
+        # 限速: rate=每秒最大请求数;0 = 不限。防止打挂目标。
+        self._min_interval = (1.0 / rate) if rate and rate > 0 else 0.0
+        self._last_req = 0.0
+        self._rate_lock = threading.Lock()
+
+    def _throttle(self):
+        """按 rate 在请求间插入最小间隔(线程安全)。"""
+        if self._min_interval <= 0:
+            return
+        with self._rate_lock:
+            wait = self._min_interval - (time.monotonic() - self._last_req)
+            if wait > 0:
+                time.sleep(wait)
+            self._last_req = time.monotonic()
 
     # ── HTTP ──
     def _req(self, method: str, path: str,
@@ -161,16 +180,31 @@ class Scanner:
         req.add_header("Content-Type", "application/json")
         if token:
             req.add_header("Authorization", f"Bearer {token}")
-        t0 = time.monotonic()
-        try:
-            resp = urlopen(req, timeout=self.timeout)
-            raw = resp.read()
-            return resp.status, (json.loads(raw) if raw else {}), time.monotonic() - t0
-        except HTTPError as e:
-            raw = e.read()
-            return e.code, (json.loads(raw) if raw else {}), time.monotonic() - t0
-        except URLError as e:
-            return 0, {"error": str(e.reason)}, time.monotonic() - t0
+
+        attempt = 0
+        while True:
+            self._throttle()
+            t0 = time.monotonic()
+            try:
+                resp = urlopen(req, timeout=self.timeout)
+                raw = resp.read()
+                log.debug("%s %s → %s", method, path, resp.status)
+                return resp.status, (json.loads(raw) if raw else {}), time.monotonic() - t0
+            except HTTPError as e:
+                # HTTP 错误是真实响应,不重试
+                raw = e.read()
+                log.debug("%s %s → %s (http)", method, path, e.code)
+                return e.code, (json.loads(raw) if raw else {}), time.monotonic() - t0
+            except URLError as e:
+                # 连接级错误: 退避重试,扛网络抖动
+                if attempt < self.retries:
+                    attempt += 1
+                    backoff = 0.2 * attempt
+                    log.debug("%s %s 连接失败 (%s),第 %d 次重试,退避 %.1fs",
+                              method, path, e.reason, attempt, backoff)
+                    time.sleep(backoff)
+                    continue
+                return 0, {"error": str(e.reason)}, time.monotonic() - t0
 
     def _resolve(self, opath: str) -> str:
         """OpenAPI {param} → 占位值."""
@@ -327,10 +361,19 @@ def main():
     ap.add_argument("--target", "-t", required=True, help="API base URL")
     ap.add_argument("--spec", default=None, help="openapi.yaml path")
     ap.add_argument("--report", "-o", default=None, help="输出 JSON 报告")
+    ap.add_argument("--sarif", default=None, help="输出 SARIF 2.1.0 报告(供 CI / GitHub Code Scanning)")
     ap.add_argument("--quick", action="store_true", help="跳过限流和 IDOR")
     ap.add_argument("--concurrency", "-c", type=int, default=2, help="并发线程数")
+    ap.add_argument("--rate", type=float, default=0.0, help="每秒最大请求数(限速,0=不限),防止打挂目标")
+    ap.add_argument("--retries", type=int, default=2, help="连接失败的重试次数")
     ap.add_argument("--scope", default="", help="授权目标 allowlist(逗号分隔的主机/域名);本机始终允许")
+    ap.add_argument("--verbose", "-v", action="store_true", help="输出每个请求的 debug 日志")
     args = ap.parse_args()
+
+    logging.basicConfig(
+        level=logging.DEBUG if args.verbose else logging.WARNING,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    )
 
     # 授权护栏: 非本机目标必须显式授权
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -357,7 +400,8 @@ def main():
     print(f"   {OpenAPI.summary(public, jwt, admin, rated)} 端点")
     print(f"   目标: {args.target}\n")
 
-    scanner = Scanner(args.target, concurrency=args.concurrency)
+    scanner = Scanner(args.target, concurrency=args.concurrency,
+                      rate=args.rate, retries=args.retries)
 
     try:
         scanner.scan_auth_bypass(jwt)
@@ -394,6 +438,13 @@ def main():
         with open(args.report, "w") as fp:
             json.dump(rep, fp, indent=2, ensure_ascii=False)
         print(f"\n📄 报告: {args.report}")
+
+    if args.sarif:
+        from sarif import to_sarif
+        os.makedirs(os.path.dirname(args.sarif) or ".", exist_ok=True)
+        with open(args.sarif, "w") as fp:
+            json.dump(to_sarif(rep), fp, indent=2, ensure_ascii=False)
+        print(f"📄 SARIF: {args.sarif}")
 
 
 if __name__ == "__main__":

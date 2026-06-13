@@ -146,6 +146,7 @@ def main():
                    choices=["recon","quick-scan","deep-scan","full-auto"])
     ap.add_argument("--quick", action="store_true", help="快速模式 (只跑 API auth + escalation)")
     ap.add_argument("--output", "-o", default="reports", help="报告输出目录")
+    ap.add_argument("--spec", default=None, help="openapi.yaml 路径(默认自动发现)")
     ap.add_argument("--scope", default="", help="授权目标 allowlist(逗号分隔的主机/域名);本机始终允许")
     args = ap.parse_args()
 
@@ -162,9 +163,12 @@ def main():
     os.makedirs(report_dir, exist_ok=True)
 
     results = []
-    spec = str(TOOLKIT.parent / "ai-data-marketplace-loginfix" / "backend" / "api" / "openapi.yaml")
-    if not os.path.exists(spec):
-        spec = os.path.expanduser("~/ai-data-marketplace-loginfix/backend/api/openapi.yaml")
+    if args.spec:
+        spec = args.spec
+    else:
+        spec = str(TOOLKIT.parent / "ai-data-marketplace-loginfix" / "backend" / "api" / "openapi.yaml")
+        if not os.path.exists(spec):
+            spec = os.path.expanduser("~/ai-data-marketplace-loginfix/backend/api/openapi.yaml")
 
     # ── Layer 1: API 扫描 ──
     scanner_args = ["-t", target, "--spec", spec]
