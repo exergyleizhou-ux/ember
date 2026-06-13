@@ -28,6 +28,7 @@ import hmac
 import json
 import threading
 import time
+import urllib.request
 import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
@@ -156,6 +157,38 @@ class _Handler(BaseHTTPRequestHandler):
         if path == "/jwt-login":
             # 颁发一个真实 HS256 JWT,供 scanner 的 JWT 检测器作伪造基准
             self._send(200, {"token": _issue_jwt()})
+            return
+
+        if path == "/redirect":
+            # OPEN-REDIRECT 探测点
+            nxt = params.get("next", [""])[0]
+            if "open_redirect" in self.vulns and nxt:
+                self.send_response(302)
+                self.send_header("Location", nxt)   # 脆弱: 直接信任用户输入
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+            else:
+                self._send(200, {"ok": True})        # 安全: 不外跳
+            return
+
+        if path == "/profile":
+            # HOST-HEADER 探测点: 脆弱时把 Host 反射进正文(如重置链接)
+            if "host_header" in self.vulns:
+                host = self.headers.get("Host", "")
+                self._send(200, {"reset_link": f"https://{host}/reset"})
+            else:
+                self._send(200, {"reset_link": "https://app.trusted.com/reset"})
+            return
+
+        if path == "/fetch":
+            # SSRF 探测点: 脆弱时服务端去抓取 url 参数(回连扫描器的 OOB)
+            url = params.get("url", [""])[0]
+            if "ssrf" in self.vulns and url:
+                try:
+                    urllib.request.urlopen(url, timeout=2).read()
+                except Exception:
+                    pass
+            self._send(200, {"ok": True})
             return
 
         if path == "/jwt/protected":

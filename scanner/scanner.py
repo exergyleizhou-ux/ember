@@ -26,7 +26,13 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 from urllib.error import URLError
-from urllib.request import HTTPError, Request, urlopen
+from urllib.request import HTTPError, HTTPRedirectHandler, Request, build_opener, urlopen
+
+
+class _NoRedirect(HTTPRedirectHandler):
+    """不追随 3xx —— 用于检测 open redirect / Host 头注入时要看原始 Location。"""
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
 
 try:
     import yaml
@@ -245,6 +251,24 @@ class Scanner:
             return e.code, dict(e.headers.items()) if e.headers else {}
         except URLError:
             return 0, {}
+
+    def _raw_get(self, path: str, headers: Optional[Dict] = None,
+                 follow_redirects: bool = False) -> Tuple[int, str, Dict]:
+        """GET 并返回 (status, body, headers);默认不追随 3xx 以便检查 Location。"""
+        url = f"{self.target}{path}"
+        req = Request(url, method="GET")
+        for k, v in (headers or {}).items():
+            req.add_header(k, v)
+        opener = urlopen if follow_redirects else build_opener(_NoRedirect()).open
+        self._throttle()
+        try:
+            resp = opener(req, timeout=self.timeout)
+            return resp.status, resp.read().decode(errors="replace"), dict(resp.headers.items())
+        except HTTPError as e:
+            body = e.read().decode(errors="replace") if e.fp else ""
+            return e.code, body, dict(e.headers.items()) if e.headers else {}
+        except URLError:
+            return 0, "", {}
 
     # ── 报告 ──
     def report(self) -> Dict:

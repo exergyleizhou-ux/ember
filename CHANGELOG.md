@@ -4,6 +4,13 @@
 
 ## [Unreleased]
 
+### 输入/重定向(P3,OWASP API7)
+- `open-redirect`:常见重定向参数(next/url/redirect…)可外跳到任意域(检查 3xx Location)
+- `host-header`:伪造 Host 头被反射进正文/Location(缓存投毒 / 密码重置投毒)
+- `ssrf`:带外(OOB)确认 —— 起本地受控监听器,若目标回连即确认 SSRF
+  (局限:OOB 在 127.0.0.1,需目标能回连扫描器;打公网目标需公网回连服务)
+- 新增 `scanner._raw_get`(不追随 3xx,以检查原始 Location)
+
 ### 对象属性级授权(P2,OWASP API6)
 - `mass-assignment`:向写端点注入特权字段(role/is_admin/balance 等),
   若被服务端接受并回显即判漏洞。纯反射判定单测 + 靶机双向集成测试。
