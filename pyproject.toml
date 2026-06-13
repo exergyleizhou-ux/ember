@@ -12,6 +12,7 @@ dependencies = [
 dev = [
     "pytest>=8.0",
     "ruff>=0.5",
+    "prometheus-client>=0.20",   # examples/dual_llm/budget_metrics.py 的可选导出(仅测试用)
 ]
 
 # 只打包"守"侧(扫描器/注入引擎/网络)。显式列出包既解决 flat-layout 的

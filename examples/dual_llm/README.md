@@ -14,6 +14,8 @@
 | `jailbreak_guard.py` | 越狱框架识别(AML.T0054);只识别不生成,不含可用 payload |
 | `perplexity_guard.py` | GCG 类对抗后缀(乱码)启发式拦截 |
 | `query_budget.py` | 进程内查询/成本预算守卫(抗模型提取/成本耗尽/推理 DoS) |
+| `budget_metrics.py` | 把预算用量导出为 Prometheus 指标(可选依赖,聚合不按身份打 label) |
+| `agent_bus.py` | 多 agent 运行时审计:消息传递时拦注入/越狱/未净化数据(prompt 蠕虫防护) |
 | `q_llm.py` | Quarantined LLM:处理不可信数据,只输出 schema-bound 结构 |
 | `p_llm.py` | Privileged LLM:唯一能调工具,prompt 必须 trusted(强制不变量 I2) |
 | `tools.py` | 示例工具:关键参数用 `Trusted()` 注解(强制不变量 I4) |
