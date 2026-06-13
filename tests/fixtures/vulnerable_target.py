@@ -273,6 +273,11 @@ class _Handler(BaseHTTPRequestHandler):
             })
             return
 
+        if path == "/auth/login":
+            # 登录: 返回嵌套结构里的真实 JWT(测认证流自动取 token)
+            self._send(200, {"data": {"tokens": {"access_token": _issue_jwt()}}})
+            return
+
         if path == "/graphql":
             # GRAPHQL-INTROSPECTION 探测点
             if "graphql_introspection" in self.vulns:

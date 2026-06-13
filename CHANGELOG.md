@@ -4,6 +4,12 @@
 
 ## [Unreleased]
 
+### 认证流自动取 token
+- `--login-url` / `--login-body` / `--login-method` / `--token-path`:扫描前走登录流
+  自动获取 token 并喂给 JWT 等需鉴权的检测器,免去手填 `--token`。
+- `scanner/auth.py`:`extract_token()` 纯函数(支持点路径,或自动发现常见 token 字段,
+  优先 JWT 形状)。单测 + 登录→token→JWT 检测器端到端集成测试。
+
 ### 接口暴露(P4,OWASP API8/API9)
 - `graphql-introspection`:对常见 GraphQL 路径发 introspection 查询,schema 暴露即判
 - `debug-exposure`:探测 swagger/openapi/actuator/.env/.git 等不该公开的调试路径
