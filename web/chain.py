@@ -214,13 +214,14 @@ if __name__ == "__main__":
             return await chain.chain_recon()
 
         if args.chain in ("full-auto", "deep-scan", "quick-scan"):
-            recon = await chain.chain_recon()
-            eps = recon.get("endpoints", [])
-
             if args.chain == "full-auto":
                 creds = json.loads(args.creds) if args.creds else None
                 return await chain.chain_full_auto(args.login, creds)
-            elif args.chain == "deep-scan":
+            
+            recon = await chain.chain_recon()
+            eps = recon.get("endpoints", [])
+            
+            if args.chain == "deep-scan":
                 return await chain.chain_deep_scan(eps)
             else:
                 return await chain.chain_quick_scan(eps)
