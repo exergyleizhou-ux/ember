@@ -4,7 +4,7 @@
 
 检测项 (5 类):
   1. AUTH-BYPASS  — JWT 端点无 token 是否 401
-  2. OPS-ESCALATE — admin 端点 buyer token 是否 403  
+  2. OPS-ESCALATE — admin 端点 buyer token 是否 403
   3. RATE-BYPASS  — 声明限流的端点是否触发 429
   4. IDOR         — B 的 token 操作 A 的资源
   5. INFO-LEAK    — 响应暴露出敏感字段
@@ -15,13 +15,17 @@
   python3 scanner.py --target http://localhost:8080/api/v1 --quick
 """
 
-import argparse, json, sys, time, uuid, os, hashlib
-from datetime import datetime, timezone
-from typing import Optional, List, Dict, Tuple, Any
-from urllib.request import Request, urlopen, HTTPError
-from urllib.error import URLError
-from concurrent.futures import ThreadPoolExecutor, as_completed
+import argparse
+import json
+import os
+import sys
 import threading
+import time
+import uuid
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional, Tuple
+from urllib.error import URLError
+from urllib.request import HTTPError, Request, urlopen
 
 try:
     import yaml
@@ -71,16 +75,16 @@ SENSITIVE_PATTERNS = [
 # ═══════════════════════════════════════════════════════════════════════
 class OpenAPI:
     """openapi.yaml 解析和端点分类."""
-    
+
     @staticmethod
     def load(path: str) -> Tuple[List[Dict], List[Dict], List[Dict], List[Dict]]:
         """返回 (public, jwt, admin, rated) 四组端点."""
         with open(path) as f:
             spec = yaml.safe_load(f)
-        
+
         public, jwt, admin, rated = [], [], [], []
         paths = spec.get("paths", {})
-        
+
         for raw_path, methods in paths.items():
             if not isinstance(methods, dict):
                 continue
@@ -90,9 +94,9 @@ class OpenAPI:
                     continue
                 if not isinstance(meta, dict):
                     continue
-                
+
                 entry = {"path": raw_path, "method": m}
-                
+
                 # security: None/absent → 继承全局 JWT
                 # security: [] → 明确公开
                 # security: [{bearerAuth: []}] → JWT
@@ -109,23 +113,23 @@ class OpenAPI:
                         is_public = False
                 else:
                     is_public = False
-                
+
                 is_admin = "/admin/" in raw_path
-                
+
                 if is_admin:
                     admin.append(entry)
                 elif is_public:
                     public.append(entry)
                 else:
                     jwt.append(entry)
-                
+
                 # 标记已知限流
                 if raw_path in RATE_LIMITS:
                     entry["rate_limit"] = RATE_LIMITS[raw_path]
                     rated.append(entry)
-        
+
         return public, jwt, admin, rated
-    
+
     @staticmethod
     def summary(public, jwt, admin, rated) -> str:
         return (f"公共:{len(public)}  JWT:{len(jwt)}  "
@@ -135,7 +139,7 @@ class OpenAPI:
 # ═══════════════════════════════════════════════════════════════════════
 class Scanner:
     """主动扫描引擎."""
-    
+
     def __init__(self, target: str, timeout: int = 15, concurrency: int = 2):
         self.target = target.rstrip("/")
         self.timeout = timeout
@@ -146,7 +150,7 @@ class Scanner:
         self.stats = {"total": 0, "passed": 0, "failed": 0, "errors": 0}
         self._lock = threading.Lock()
         self._started = datetime.now(timezone.utc)
-    
+
     # ── HTTP ──
     def _req(self, method: str, path: str,
              body: Any = None, token: Optional[str] = None) -> Tuple[int, Dict, float]:
@@ -167,7 +171,7 @@ class Scanner:
             return e.code, (json.loads(raw) if raw else {}), time.monotonic() - t0
         except URLError as e:
             return 0, {"error": str(e.reason)}, time.monotonic() - t0
-    
+
     def _resolve(self, opath: str) -> str:
         """OpenAPI {param} → 占位值."""
         # 需要真实存在的 UUID 占位,否则 404 和 403 混淆
@@ -176,7 +180,7 @@ class Scanner:
             placeholder = "a" * 36 if "id" in p else "dummy-tok"
             opath = opath.replace(p, placeholder)
         return opath
-    
+
     def _register(self, label: str) -> Tuple[str, str, str]:
         """注册用户 → (token, user_id, account)."""
         email = f"scan-{label}-{uuid.uuid4().hex[:6]}@sec.test"
@@ -189,7 +193,7 @@ class Scanner:
         tok = d.get("tokens", {}).get("access_token", "")
         uid = d.get("user", {}).get("id", "")
         return tok, uid, email
-    
+
     def _add(self, severity: str, check: str, path: str, method: str, detail: str, evidence: str = ""):
         """记录漏洞."""
         with self._lock:
@@ -199,7 +203,7 @@ class Scanner:
                 "timestamp": datetime.now(timezone.utc).isoformat(),
             })
             self.stats["failed"] += 1
-    
+
     # ── 扫描 1: 鉴权绕过 ──
     def scan_auth_bypass(self, endpoints: List[Dict]):
         print(f"\n🔍 AUTH-BYPASS: 打 {len(endpoints)} 个 JWT 端点 (无 token)")
@@ -216,14 +220,14 @@ class Scanner:
             else:
                 self._add("high", "auth-bypass", p, ep["method"],
                     f"无 token 返回 {s} (预期 401/403) — authMW 缺失?")
-    
+
     # ── 扫描 2: 权限提升 ──
     def scan_ops_escalation(self, endpoints: List[Dict]):
         print(f"\n🔍 OPS-ESCALATE: 打 {len(endpoints)} 个 admin 端点 (buyer token)")
         if not self.buyer_token:
             self.buyer_token, _, _ = self._register("buyer")
             print(f"   buyer token: {self.buyer_token[:24]}…")
-        
+
         for ep in endpoints:
             p = self._resolve(ep["path"])
             body = None
@@ -239,7 +243,7 @@ class Scanner:
             else:
                 self._add("critical", "ops-escalate", p, ep["method"],
                     f"buyer token → {s} (预期 403). 缺少 authMW 或 opsGate!")
-    
+
     # ── 扫描 3: 限流 ──
     def scan_rate_limits(self, endpoints: List[Dict]):
         print(f"\n🔍 RATE-BYPASS: 打 {len(endpoints)} 个限流端点")
@@ -254,22 +258,24 @@ class Scanner:
             for i in range(limit + 1):
                 s, _, _ = self._req(ep["method"], p, body)
                 if s == 429:
-                    hit = True; break
-                if s >= 500: break
+                    hit = True
+                    break
+                if s >= 500:
+                    break
                 time.sleep(0.06)
             if hit:
                 self.stats["passed"] += 1
             else:
                 self._add("medium", "rate-bypass", p, ep["method"],
                     f"连打 {limit+1} 次未触发 429 ({reason}) — 限流缺失或阈值过高")
-    
+
     # ── 扫描 4: IDOR ──
     def scan_idor(self):
-        print(f"\n🔍 IDOR: 跨用户访问检测")
+        print("\n🔍 IDOR: 跨用户访问检测")
         ta, ua, _ = self._register("A")
         tb, ub, eb = self._register("B")
         print(f"   A={ua[:8]}…  B={ub[:8]}… ({eb})")
-        
+
         tests = [
             ("/users/me/notifications/{id}/read",  "POST", {}, "notification IDOR"),
             ("/questions/{id}/answer",              "POST", {"body":"scan"}, "Q&A IDOR"),
@@ -283,10 +289,10 @@ class Scanner:
             else:
                 self._add("high", "idor", p, method,
                     f"{label}: B token → {s} (预期 4xx)")
-    
+
     # ── 扫描 5: 信息泄露 ──
     def scan_info_leak(self, public_eps: List[Dict]):
-        print(f"\n🔍 INFO-LEAK: 公共端点响应检测")
+        print("\n🔍 INFO-LEAK: 公共端点响应检测")
         probes = [("GET", "/datasets?limit=5"), ("GET", "/search?q=test"),
                    ("GET", "/verify/bogus-cert")]
         for method, path in probes:
@@ -301,7 +307,7 @@ class Scanner:
                     evidence=json.dumps(body, ensure_ascii=False)[:200])
             else:
                 self.stats["passed"] += 1
-    
+
     # ── 报告 ──
     def report(self) -> Dict:
         severity_order = {"critical": 0, "high": 1, "medium": 2, "low": 3}
@@ -324,23 +330,26 @@ def main():
     ap.add_argument("--quick", action="store_true", help="跳过限流和 IDOR")
     ap.add_argument("--concurrency", "-c", type=int, default=2, help="并发线程数")
     args = ap.parse_args()
-    
+
     # 找 spec
     if args.spec:
         sp = args.spec
     else:
         for c in ["backend/api/openapi.yaml",
                   os.path.expanduser("~/ai-data-marketplace-loginfix/backend/api/openapi.yaml")]:
-            if os.path.exists(c): sp = c; break
-        else: sys.exit("找不到 openapi.yaml。用 --spec")
-    
+            if os.path.exists(c):
+                sp = c
+                break
+        else:
+            sys.exit("找不到 openapi.yaml。用 --spec")
+
     print(f"📄 {sp}")
     public, jwt, admin, rated = OpenAPI.load(sp)
     print(f"   {OpenAPI.summary(public, jwt, admin, rated)} 端点")
     print(f"   目标: {args.target}\n")
-    
+
     scanner = Scanner(args.target, concurrency=args.concurrency)
-    
+
     try:
         scanner.scan_auth_bypass(jwt)
         scanner.scan_ops_escalation(admin)
@@ -350,14 +359,14 @@ def main():
         scanner.scan_info_leak(public)
     except KeyboardInterrupt:
         print("\n⏹  用户中断")
-    
+
     # 终端报告
     rep = scanner.report()
     s = rep["stats"]
     print(f"\n{'═'*60}")
     print(f"扫描完成: {s['total']} 项检测  {s['duration_seconds']:.0f}s")
     print(f"  ✅ 通过: {s['passed']}    ❌ 漏洞: {s['failed']}    ⚠  错误: {s['errors']}")
-    
+
     if rep["findings"]:
         sev_icon = {"critical":"🔴","high":"🟠","medium":"🟡"}
         print(f"\n🚨 {len(rep['findings'])} 个漏洞:")
@@ -370,7 +379,7 @@ def main():
                 print(f"     证据: {f['evidence']}")
     else:
         print("\n🎉 零漏洞!")
-    
+
     if args.report:
         os.makedirs(os.path.dirname(args.report) or ".", exist_ok=True)
         with open(args.report, "w") as fp:
