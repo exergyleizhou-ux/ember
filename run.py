@@ -15,8 +15,10 @@
   5. AI 注入引擎 (ai/)       — 5类注入技术 + 攻击面矩阵
   6. Fable 5 武器化 (ai/)    — 120KB prompt 解析 + 9条拒绝规则绕过
   7. HTML 报告 — 所有结果汇总为一页
+  8. Web 全自动攻击链 (web/) — 异步爬虫→注入验证→WAF穿透→exploit生成
 
   --liberation: 红队模式 — L1B3RT4S 越狱库 + 目标模型自动选 payload
+  --hunt:       Web 攻击模式 — 异步全自动: 蜘蛛→验证→渗透→报告
 """
 
 import argparse, json, os, sys, subprocess, time
@@ -32,6 +34,7 @@ AI_INJECT = TOOLKIT / "ai" / "inject.py"
 PROMPT_LIB = TOOLKIT / "ai" / "prompt_library.py"
 FABLE5 = TOOLKIT / "ai" / "fable5.py"
 SENDER = TOOLKIT / "ai" / "sender.py"
+CHAIN = TOOLKIT / "web" / "chain.py"
 REPORTS = TOOLKIT / "reports"
 
 def run_step(name: str, cmd: list, timeout: int = 300) -> dict:
@@ -132,8 +135,11 @@ def main():
     ap.add_argument("--full", action="store_true", help="全量扫描 (含 payload 注入 + 网络 + AI)")
     ap.add_argument("--liberation", action="store_true", help="红队模式: L1B3RT4S 越狱库 + 目标模型自动选 payload")
     ap.add_argument("--live", action="store_true", help="实弹! 真发 payload 到 AI 端点 (需 API key)")
+    ap.add_argument("--hunt", action="store_true", help="Web 全自动攻击: 异步蜘蛛→验证→渗透→报告")
     ap.add_argument("--model", "-m", default="deepseek", help="目标模型 (用于 liberation/live 模式)")
     ap.add_argument("--count", "-n", type=int, default=3, help="发送 payload 数量")
+    ap.add_argument("--chain", default="full-auto",
+                   choices=["recon","quick-scan","deep-scan","full-auto"])
     ap.add_argument("--quick", action="store_true", help="快速模式 (只跑 API auth + escalation)")
     ap.add_argument("--output", "-o", default="reports", help="报告输出目录")
     args = ap.parse_args()
@@ -202,7 +208,13 @@ def main():
         results.append(run_step(f"🔥 实弹: {args.model} ({args.count} payloads)",
             sender_args, timeout=120))
     
-    # ── Layer 7: HTML 报告 ──
+    # ── Layer 7: Web 全自动攻击链 (--hunt) ──
+    if args.hunt:
+        chain_args = [str(CHAIN), "-t", args.target, "--chain", args.chain, "-c", "10"]
+        results.append(run_step(f"🕷️ 全自动Web攻击: {args.chain} → {args.target}",
+            chain_args, timeout=300))
+    
+    # ── Layer 8: HTML 报告 ──
     html_path = gen_html(report_dir, results, target)
     
     # 终端总结
