@@ -4,6 +4,15 @@
 
 ## [Unreleased]
 
+### LLM 防御 Wave 2(Jailbreak + Code Exec)
+- 运行时守卫(`examples/dual_llm/`,纵深防御外层,**只识别不生成**):
+  - `jailbreak_guard.py`:识别越狱框架措辞(ATLAS AML.T0054)。不含任何可用越狱 payload。
+  - `perplexity_guard.py`:零依赖启发式,拦 GCG 类对抗后缀乱码。
+- 静态检测器 `llm-code-exec`(LLM05:2025 / AML.T0050,critical):
+  LLM 输出流入 `eval`/`exec`/`subprocess`/`os.system` = 自动执行模型生成代码的 RCE 面。
+  与 `llm-tool-confused-deputy`(外部数据→工具)区分:本规则是 LLM 输出→代码执行。
+- 诚实定位:运行时守卫是签名启发式,会被改写绕过;真正边界是 dual-LLM + taint。
+
 ### LLM 应用静态扫描(Wave 1b,OWASP LLM01/02 + MITRE ATLAS)
 - 新增**源码 target 模式** `ember-scan --source DIR`:扫 LLM agent 的 Python 源码。
   检测器有了 `mode`(http=打活目标 / static=扫源码),按 `--target`/`--source` 自动启用。

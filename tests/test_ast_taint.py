@@ -51,6 +51,31 @@ def test_output_exfil_detected(at):
     assert "llm-output-exfil" in rules(at, code)
 
 
+@pytest.mark.parametrize("sink", ["exec(out)", "eval(out)", "subprocess.run(out)"])
+def test_code_exec_detected(at, sink):
+    # LLM 输出 → 代码执行 = llm-code-exec(RCE 面)
+    code = f"def h():\n    out = llm.invoke(p)\n    {sink}\n"
+    assert "llm-code-exec" in rules(at, code)
+
+
+def test_code_exec_distinct_from_confused_deputy(at):
+    # ext→eval 是 confused-deputy;llm→eval 是 code-exec,两者不同源不同色
+    ext = "def h():\n    d = fetch_url(u)\n    eval(d)\n"
+    llm = "def h():\n    o = llm.invoke(p)\n    eval(o)\n"
+    assert "llm-tool-confused-deputy" in rules(at, ext)
+    assert "llm-code-exec" not in rules(at, ext)
+    assert "llm-code-exec" in rules(at, llm)
+    assert "llm-tool-confused-deputy" not in rules(at, llm)
+
+
+def test_code_exec_sanitized_not_flagged(at):
+    code = ("def h():\n"
+            "    o = llm.invoke(p)\n"
+            "    safe = whitelist_match(o, ALLOWED)\n"
+            "    exec(safe)\n")
+    assert "llm-code-exec" not in rules(at, code)
+
+
 # ── 无误报 ──
 def test_sanitized_not_flagged(at):
     code = ("def h():\n"
