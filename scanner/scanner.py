@@ -61,20 +61,6 @@ RATE_LIMITS = {
     "/datasets/{id}/questions":     {"limit": 10, "window": "1m", "reason": "防垃圾提问"},
 }
 
-# 敏感字段检测模式
-SENSITIVE_PATTERNS = [
-    ("password",  "密码字段泄露"),
-    ("secret",    "密钥字段泄露"),
-    ("token",     "令牌字段泄露"),
-    ("hash",      "哈希字段可能泄露"),
-    ("private_key","私钥字段泄露"),
-    ("api_key",   "API 密钥字段泄露"),
-    ("access_token","访问令牌泄露"),
-    ("refresh_token","刷新令牌泄露"),
-    ("totp_secret","2FA 密钥泄露"),
-    ("recovery_code","恢复码泄露"),
-]
-
 # ═══════════════════════════════════════════════════════════════════════
 class OpenAPI:
     """openapi.yaml 解析和端点分类."""
@@ -153,6 +139,11 @@ class Scanner:
         self.ops_token: Optional[str] = None
         self.findings: List[Dict] = []
         self.stats = {"total": 0, "passed": 0, "failed": 0, "errors": 0}
+        # 端点分组(由 main 在装载 spec 后填充;检测器从 ctx 读取)
+        self.public: List[Dict] = []
+        self.jwt: List[Dict] = []
+        self.admin: List[Dict] = []
+        self.rated: List[Dict] = []
         self._lock = threading.Lock()
         self._started = datetime.now(timezone.utc)
         # 限速: rate=每秒最大请求数;0 = 不限。防止打挂目标。
@@ -238,110 +229,6 @@ class Scanner:
             })
             self.stats["failed"] += 1
 
-    # ── 扫描 1: 鉴权绕过 ──
-    def scan_auth_bypass(self, endpoints: List[Dict]):
-        print(f"\n🔍 AUTH-BYPASS: 打 {len(endpoints)} 个 JWT 端点 (无 token)")
-        for ep in endpoints:
-            p = self._resolve(ep["path"])
-            body = {"note":"scan"} if ep["method"] in ("POST","PUT") else None
-            s, _, _ = self._req(ep["method"], p, body)
-            self.stats["total"] += 1
-            if s in (401, 403):
-                self.stats["passed"] += 1
-            elif s == 0:
-                self._add("medium", "auth-bypass", p, ep["method"], "连接失败 (目标不可达?)")
-                self.stats["errors"] += 1
-            else:
-                self._add("high", "auth-bypass", p, ep["method"],
-                    f"无 token 返回 {s} (预期 401/403) — authMW 缺失?")
-
-    # ── 扫描 2: 权限提升 ──
-    def scan_ops_escalation(self, endpoints: List[Dict]):
-        print(f"\n🔍 OPS-ESCALATE: 打 {len(endpoints)} 个 admin 端点 (buyer token)")
-        if not self.buyer_token:
-            self.buyer_token, _, _ = self._register("buyer")
-            print(f"   buyer token: {self.buyer_token[:24]}…")
-
-        for ep in endpoints:
-            p = self._resolve(ep["path"])
-            body = None
-            if ep["method"] in ("POST","PUT"):
-                body = {"note":"scan","reason":"test","approve":True}
-            s, resp, _ = self._req(ep["method"], p, body, token=self.buyer_token)
-            self.stats["total"] += 1
-            if s in (401, 403):
-                self.stats["passed"] += 1
-            elif s == 0:
-                self._add("medium", "ops-escalate", p, ep["method"], "连接失败")
-                self.stats["errors"] += 1
-            else:
-                self._add("critical", "ops-escalate", p, ep["method"],
-                    f"buyer token → {s} (预期 403). 缺少 authMW 或 opsGate!")
-
-    # ── 扫描 3: 限流 ──
-    def scan_rate_limits(self, endpoints: List[Dict]):
-        print(f"\n🔍 RATE-BYPASS: 打 {len(endpoints)} 个限流端点")
-        for ep in endpoints:
-            rl = ep.get("rate_limit", {})
-            limit = rl.get("limit", 10)
-            reason = rl.get("reason", "?")
-            p = self._resolve(ep["path"])
-            body = {"note":"scan"} if ep["method"] in ("POST","PUT") else None
-            self.stats["total"] += 1
-            hit = False
-            for i in range(limit + 1):
-                s, _, _ = self._req(ep["method"], p, body)
-                if s == 429:
-                    hit = True
-                    break
-                if s >= 500:
-                    break
-                time.sleep(0.06)
-            if hit:
-                self.stats["passed"] += 1
-            else:
-                self._add("medium", "rate-bypass", p, ep["method"],
-                    f"连打 {limit+1} 次未触发 429 ({reason}) — 限流缺失或阈值过高")
-
-    # ── 扫描 4: IDOR ──
-    def scan_idor(self):
-        print("\n🔍 IDOR: 跨用户访问检测")
-        ta, ua, _ = self._register("A")
-        tb, ub, eb = self._register("B")
-        print(f"   A={ua[:8]}…  B={ub[:8]}… ({eb})")
-
-        tests = [
-            ("/users/me/notifications/{id}/read",  "POST", {}, "notification IDOR"),
-            ("/questions/{id}/answer",              "POST", {"body":"scan"}, "Q&A IDOR"),
-        ]
-        for opath, method, body, label in tests:
-            p = opath.replace("{id}", "bogus-" + uuid.uuid4().hex[:8])
-            s, _, _ = self._req(method, p, body, token=tb)
-            self.stats["total"] += 1
-            if s in (401, 403, 404):
-                self.stats["passed"] += 1
-            else:
-                self._add("high", "idor", p, method,
-                    f"{label}: B token → {s} (预期 4xx)")
-
-    # ── 扫描 5: 信息泄露 ──
-    def scan_info_leak(self, public_eps: List[Dict]):
-        print("\n🔍 INFO-LEAK: 公共端点响应检测")
-        probes = [("GET", "/datasets?limit=5"), ("GET", "/search?q=test"),
-                   ("GET", "/verify/bogus-cert")]
-        for method, path in probes:
-            s, body, _ = self._req(method, path)
-            self.stats["total"] += 1
-            resp_str = json.dumps(body).lower()
-            leaked = [(k, why) for k, why in SENSITIVE_PATTERNS if k in resp_str]
-            if leaked:
-                fields = ", ".join(k for k, _ in leaked)
-                self._add("medium", "info-leak", path, method,
-                    f"响应含敏感字段: {fields}",
-                    evidence=json.dumps(body, ensure_ascii=False)[:200])
-            else:
-                self.stats["passed"] += 1
-
     # ── HTTP 头(被动检查用)──
     def _get_headers(self, path: str, extra: Optional[Dict] = None) -> Tuple[int, Dict]:
         """GET 一个端点,返回 (status, response_headers)。失败返回 (0, {})。"""
@@ -357,41 +244,6 @@ class Scanner:
             return e.code, dict(e.headers.items()) if e.headers else {}
         except URLError:
             return 0, {}
-
-    # ── 扫描 6: 安全响应头 ──
-    def scan_security_headers(self, probe_path: str = "/"):
-        print("\n🔍 SEC-HEADERS: 安全响应头检测")
-        from web_checks import missing_security_headers
-        status, headers = self._get_headers(probe_path)
-        self.stats["total"] += 1
-        if status == 0:
-            self._add("medium", "sec-headers", probe_path, "GET", "连接失败 (目标不可达?)")
-            self.stats["errors"] += 1
-            return
-        missing = missing_security_headers(headers)
-        if not missing:
-            self.stats["passed"] += 1
-            return
-        for name, desc, sev in missing:
-            self._add(sev, "sec-headers", probe_path, "GET", desc, evidence=name)
-
-    # ── 扫描 7: CORS 配置 ──
-    def scan_cors(self, probe_path: str = "/"):
-        print("\n🔍 CORS: 跨域配置检测")
-        from web_checks import analyze_cors
-        evil = "https://evil.example"
-        status, headers = self._get_headers(probe_path, extra={"Origin": evil})
-        self.stats["total"] += 1
-        if status == 0:
-            self._add("medium", "cors", probe_path, "GET", "连接失败 (目标不可达?)")
-            self.stats["errors"] += 1
-            return
-        issue = analyze_cors(evil, headers)
-        if issue is None:
-            self.stats["passed"] += 1
-            return
-        desc, sev = issue
-        self._add(sev, "cors", probe_path, "GET", desc, evidence=f"Origin: {evil}")
 
     # ── 报告 ──
     def report(self) -> Dict:
@@ -409,16 +261,19 @@ class Scanner:
 # ═══════════════════════════════════════════════════════════════════════
 def main():
     ap = argparse.ArgumentParser(description="绿洲 API 安全扫描器 v2")
-    ap.add_argument("--target", "-t", required=True, help="API base URL")
+    ap.add_argument("--target", "-t", default=None, help="API base URL")
     ap.add_argument("--spec", default=None, help="openapi.yaml path")
     ap.add_argument("--report", "-o", default=None, help="输出 JSON 报告")
     ap.add_argument("--sarif", default=None, help="输出 SARIF 2.1.0 报告(供 CI / GitHub Code Scanning)")
-    ap.add_argument("--quick", action="store_true", help="跳过限流和 IDOR")
+    ap.add_argument("--quick", action="store_true", help="跳过慢检测器(限流/IDOR)")
     ap.add_argument("--concurrency", "-c", type=int, default=2, help="并发线程数")
     ap.add_argument("--rate", type=float, default=0.0, help="每秒最大请求数(限速,0=不限),防止打挂目标")
     ap.add_argument("--retries", type=int, default=2, help="连接失败的重试次数")
     ap.add_argument("--scope", default="", help="授权目标 allowlist(逗号分隔的主机/域名);本机始终允许")
     ap.add_argument("--verbose", "-v", action="store_true", help="输出每个请求的 debug 日志")
+    ap.add_argument("--list-detectors", action="store_true", help="列出所有检测器并退出")
+    ap.add_argument("--enable", default="", help="只跑这些检测器(逗号分隔的 name)")
+    ap.add_argument("--disable", default="", help="跳过这些检测器(逗号分隔的 name)")
     args = ap.parse_args()
 
     logging.basicConfig(
@@ -426,8 +281,20 @@ def main():
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
 
-    # 授权护栏: 非本机目标必须显式授权
+    # 检测器注册表(同级包,按 CLI 方式放上 path)
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import detectors
+
+    if args.list_detectors:
+        print(f"{'NAME':<16}{'OWASP':<12}{'SEVERITY':<10}SLOW")
+        for d in detectors.iter_detectors():
+            print(f"{d.name:<16}{d.owasp:<12}{d.severity:<10}{'yes' if d.slow else ''}")
+        return
+
+    if not args.target:
+        ap.error("--target/-t 必填(除非 --list-detectors)")
+
+    # 授权护栏: 非本机目标必须显式授权
     from scope import UnauthorizedTargetError, parse_scope, require_authorized
     try:
         require_authorized(args.target, parse_scope(args.scope))
@@ -453,16 +320,24 @@ def main():
 
     scanner = Scanner(args.target, concurrency=args.concurrency,
                       rate=args.rate, retries=args.retries)
+    scanner.public, scanner.jwt, scanner.admin, scanner.rated = public, jwt, admin, rated
+
+    # 选择启用的检测器: --enable 白名单优先,其次 --disable 黑名单,--quick 跳过慢的
+    enable = {x.strip() for x in args.enable.split(",") if x.strip()}
+    disable = {x.strip() for x in args.disable.split(",") if x.strip()}
+    selected = []
+    for d in detectors.iter_detectors():
+        if enable and d.name not in enable:
+            continue
+        if d.name in disable:
+            continue
+        if args.quick and d.slow:
+            continue
+        selected.append(d)
 
     try:
-        scanner.scan_auth_bypass(jwt)
-        scanner.scan_ops_escalation(admin)
-        if not args.quick:
-            scanner.scan_rate_limits(rated)
-            scanner.scan_idor()
-        scanner.scan_info_leak(public)
-        scanner.scan_security_headers()
-        scanner.scan_cors()
+        for d in selected:
+            d.run(scanner)
     except KeyboardInterrupt:
         print("\n⏹  用户中断")
 

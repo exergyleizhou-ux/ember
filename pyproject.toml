@@ -17,7 +17,7 @@ dev = [
 # 只打包"守"侧(扫描器/注入引擎/网络)。显式列出包既解决 flat-layout 的
 # 自动发现歧义,又把"攻"侧(ai/ web/ exploits/)排除在分发物之外。
 [tool.setuptools]
-packages = ["scanner", "payloads", "network"]
+packages = ["scanner", "scanner.detectors", "payloads", "network"]
 
 [project.scripts]
 ember-scan = "scanner.scanner:main"

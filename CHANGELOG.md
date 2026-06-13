@@ -2,7 +2,17 @@
 
 本项目的显著变更记录于此。版本遵循 [Semantic Versioning](https://semver.org/lang/zh-CN/)。
 
-## [Unreleased] — 守侧生产化
+## [Unreleased]
+
+### 检测器注册表(P0,为 OWASP API Top 10 覆盖铺路)
+- 新增插件化检测器注册表(`scanner/detectors/`):每个检测器是声明 name/owasp/severity、
+  实现 `run(ctx)` 的小类,自动注册。现有 7 项检查(auth-bypass/ops-escalate/rate-bypass/
+  idor/info-leak/sec-headers/cors)迁入注册表,**行为不变,76 测试全绿**。
+- `scanner.py` 瘦身为:装 spec → 建 ScanContext → 跑注册表 → 报告/SARIF。
+- 新 CLI:`--list-detectors`(列出 name/OWASP/severity)、`--enable`/`--disable` 按名启停。
+- 见设计 `docs/superpowers/specs/2026-06-13-detector-registry-design.md`。
+
+## [Unreleased-prev] — 守侧生产化
 
 把"守"(防守 / 授权扫描)侧从"能跑"推到生产成熟。**仅守侧;攻侧(ai/ web/ exploits/)未触碰。**
 
