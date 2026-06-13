@@ -7,9 +7,22 @@
   python3 network/scan.py --host oasis.example.com --full
 """
 
-import subprocess, sys, json, ssl, socket, os
+import json
+import socket
+import ssl
+import subprocess
 from datetime import datetime, timezone
 from typing import Dict, List
+
+# 弱加密套件标记(子串匹配,大小写不敏感)
+WEAK_CIPHER_MARKERS = ("RC4", "DES", "3DES", "EXPORT", "NULL", "anon")
+
+
+def is_weak_cipher(cipher_name: str) -> bool:
+    """判断 cipher 名是否命中弱加密标记。纯函数,便于测试。"""
+    name = (cipher_name or "").upper()
+    return any(marker.upper() in name for marker in WEAK_CIPHER_MARKERS)
+
 
 def run(cmd: List[str], timeout: int = 30) -> str:
     try:
@@ -35,11 +48,9 @@ def check_ssl(host: str, port: int = 443) -> Dict:
                 result["cert_issuer"] = cert.get("issuer", [])
                 result["cert_expires"] = cert.get("notAfter", "")
                 # 弱加密检查
-                weak = ["RC4","DES","3DES","EXPORT","NULL","anon"]
                 cipher_name = ssock.cipher()[0]
-                for w in weak:
-                    if w in cipher_name:
-                        result["issues"].append(f"弱加密套件: {cipher_name}")
+                if is_weak_cipher(cipher_name):
+                    result["issues"].append(f"弱加密套件: {cipher_name}")
     except Exception as e:
         result["issues"].append(f"TLS 连接失败: {e}")
     return result
@@ -54,7 +65,7 @@ def check_ports(host: str) -> Dict:
         if "/tcp" in line and "open" in line:
             parts = line.split()
             ports.append({"port": parts[0].split("/")[0], "service": parts[2] if len(parts) > 2 else "?"})
-    
+
     if not ports:
         # fallback: python socket scan common ports
         common = [22, 80, 443, 5432, 6379, 8080, 3000, 9090, 9093, 9187]
@@ -63,9 +74,9 @@ def check_ports(host: str) -> Dict:
                 s = socket.create_connection((host, p), timeout=2)
                 s.close()
                 ports.append({"port": str(p), "service": "open"})
-            except:
+            except OSError:
                 pass
-    
+
     dangerous = [p for p in ports if int(p["port"]) in (5432, 6379, 22)]
     return {
         "host": host, "open_ports": ports,
@@ -81,11 +92,11 @@ def main():
     ap.add_argument("--ports", nargs="+", type=int, default=[443])
     ap.add_argument("--full", action="store_true", help="完整扫描 (含 nmap)")
     args = ap.parse_args()
-    
+
     print(f"🔐 网络扫描 {args.host}")
-    
+
     results = {"host": args.host, "scanned_at": datetime.now(timezone.utc).isoformat()}
-    
+
     # SSL
     print("\n🔒 TLS/SSL …")
     ssl_results = [check_ssl(args.host, p) for p in args.ports]
@@ -95,7 +106,7 @@ def main():
         print(f"  {status} 端口 {r['port']}: {r.get('tls_version','N/A')} / {r.get('cipher',('',''))[0]}")
         for issue in r["issues"]:
             print(f"    ⚠️  {issue}")
-    
+
     # 端口
     if args.full:
         print("\n📡 端口扫描 …")
@@ -105,7 +116,7 @@ def main():
             print(f"  {p['port']}/tcp → {p['service']}")
         for d in ports["dangerous_exposure"]:
             print(f"  🔴 {d}")
-    
+
     print(json.dumps(results, indent=2, ensure_ascii=False))
 
 

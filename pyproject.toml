@@ -1,0 +1,36 @@
+[project]
+name = "ember"
+version = "0.1.0"
+description = "五层攻防一体的授权安全测试工具包 — 守(漏扫)与攻(授权渗透)"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.5",
+]
+
+# 只打包"守"侧(扫描器/注入引擎/网络)。显式列出包既解决 flat-layout 的
+# 自动发现歧义,又把"攻"侧(ai/ web/ exploits/)排除在分发物之外。
+[tool.setuptools]
+packages = ["scanner", "payloads", "network"]
+
+[project.scripts]
+ember-scan = "scanner.scanner:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 120
+target-version = "py39"
+
+[tool.ruff.lint]
+# 攻击 payload 文件里大量"危险"字符串是设计使然,放宽相应规则
+select = ["E", "F", "W", "I"]
+ignore = ["E501", "E402"]

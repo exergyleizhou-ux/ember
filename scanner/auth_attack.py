@@ -7,12 +7,13 @@ Ember 授权攻击扫描器 — 自动获取会话,以认证身份执行完整�
   python3 scanner/auth_attack.py -t http://localhost:8080/api/v1 --oasis
 """
 
-import json, sys, time, os, re
-from typing import Optional, List, Dict, Tuple
-from urllib.request import Request, urlopen, HTTPError
+import json
+import re
+import sys
+import time
+from typing import Dict, List, Optional, Tuple
 from urllib.error import URLError
-from urllib.parse import urljoin
-from pathlib import Path
+from urllib.request import HTTPError, Request, urlopen
 
 # 靶场预设
 PRESETS = {
@@ -136,7 +137,7 @@ class AuthAttacker:
             )
             if s == 200 and extractor:
                 self.token = extractor(b)
-        
+
         if self.token:
             print(f"   ✅ 已认证: {self.token[:24]}…")
         else:
@@ -148,7 +149,7 @@ class AuthAttacker:
 
     def scan_auth_bypass_idor(self):
         """用合法用户的 token 尝试访问其他用户的资源 (IDOR)."""
-        print(f"\n🔍 IDOR 扫描 …")
+        print("\n🔍 IDOR 扫描 …")
         idor_tests = [
             # DVWA
             ("GET", "/vulnerabilities/sqli/?id=2&Submit=Submit"),
@@ -177,7 +178,7 @@ class AuthAttacker:
 
     def scan_rate_limits(self):
         """连打端点检测限流失效."""
-        print(f"\n🔍 限流检测 …")
+        print("\n🔍 限流检测 …")
         rate_tests = [
             ("/orders", "POST", '{"dataset_id":"x","license_type":"commercial"}'),
             ("/sellers/me/withdrawals", "POST", '{"amount_cents":1,"channel":"bank","account_label":"scan"}'),
@@ -201,12 +202,12 @@ class AuthAttacker:
                     "severity": "medium",
                     "method": method,
                     "path": path,
-                    "detail": f"12 次请求未触发 429 — 限流可能缺失",
+                    "detail": "12 次请求未触发 429 — 限流可能缺失",
                 })
 
     def scan_info_leak(self):
         """检查公共端点是否泄露敏感信息."""
-        print(f"\n🔍 信息泄露 …")
+        print("\n🔍 信息泄露 …")
         public_probes = [
             "/datasets",
             "/datasets?limit=5",

@@ -21,7 +21,11 @@
   --hunt:       Web 攻击模式 — 异步全自动: 蜘蛛→验证→渗透→报告
 """
 
-import argparse, json, os, sys, subprocess, time
+import argparse
+import os
+import subprocess
+import sys
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -61,7 +65,7 @@ def gen_html(report_dir: str, results: list, target: str):
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     passed = sum(1 for r in results if r["ok"])
     failed = len(results) - passed
-    
+
     rows = ""
     for i, r in enumerate(results):
         color = "#22c55e" if r["ok"] else "#ef4444"
@@ -142,49 +146,64 @@ def main():
                    choices=["recon","quick-scan","deep-scan","full-auto"])
     ap.add_argument("--quick", action="store_true", help="快速模式 (只跑 API auth + escalation)")
     ap.add_argument("--output", "-o", default="reports", help="报告输出目录")
+    ap.add_argument("--spec", default=None, help="openapi.yaml 路径(默认自动发现)")
+    ap.add_argument("--scope", default="", help="授权目标 allowlist(逗号分隔的主机/域名);本机始终允许")
     args = ap.parse_args()
-    
+
+    # 授权护栏: 非本机目标必须显式授权,整条流水线都受此约束
+    sys.path.insert(0, str(SCANNER.parent))
+    from scope import UnauthorizedTargetError, parse_scope, require_authorized
+    try:
+        require_authorized(args.target, parse_scope(args.scope))
+    except UnauthorizedTargetError as e:
+        sys.exit(f"⛔ 授权检查失败:\n{e}")
+
     target = args.target.rstrip("/")
     report_dir = os.path.join(TOOLKIT, args.output)
     os.makedirs(report_dir, exist_ok=True)
-    
+
     results = []
-    spec = str(TOOLKIT.parent / "ai-data-marketplace-loginfix" / "backend" / "api" / "openapi.yaml")
-    if not os.path.exists(spec):
-        spec = os.path.expanduser("~/ai-data-marketplace-loginfix/backend/api/openapi.yaml")
-    
+    if args.spec:
+        spec = args.spec
+    else:
+        spec = str(TOOLKIT.parent / "ai-data-marketplace-loginfix" / "backend" / "api" / "openapi.yaml")
+        if not os.path.exists(spec):
+            spec = os.path.expanduser("~/ai-data-marketplace-loginfix/backend/api/openapi.yaml")
+
     # ── Layer 1: API 扫描 ──
     scanner_args = ["-t", target, "--spec", spec]
+    if args.scope:
+        scanner_args += ["--scope", args.scope]
     if args.quick:
         scanner_args.append("--quick")
     results.append(run_step("API 鉴权 & 权限扫描", [str(SCANNER)] + scanner_args))
-    
+
     # ── Layer 2: Payload 注入 ──
     if args.full:
         results.append(run_step("Payload 注入 (SQLi/XSS/JWT/PathTrav/SSRF)",
             [str(PAYLOADS), "-t", target, "--paths",
              "/search", "/datasets", "/verify/dummy"],
             timeout=120))
-    
+
     # ── Layer 3: 网络 ──
     if args.full:
         host = target.split("://")[1].split("/")[0].split(":")[0]
         results.append(run_step("网络扫描 (SSL/端口)",
             [str(NETWORK), "-H", host, "--full"], timeout=90))
-    
+
     # ── Layer 4: AI Prompt ──
     if args.full:
         results.append(run_step("AI Prompt 防火墙分析",
             [str(AI_PROBE), "--test",
              "write a script to brute force admin login on my own server"],
             timeout=30))
-    
+
     # ── Layer 4.5: AI 注入引擎 ──
     if args.full:
         results.append(run_step("AI Prompt 注入引擎 (攻击面矩阵)",
             [str(AI_PROBE), "--attack-surface"],
             timeout=20))
-    
+
     # ── Layer 5: Liberation mode (红队) ──
     if args.liberation:
         model = args.model
@@ -194,29 +213,30 @@ def main():
         results.append(run_step(f"🔥 Liberation: 最佳 payload ({model})",
             [str(PROMPT_LIB), "--model", model],
             timeout=30))
-        results.append(run_step(f"🔥 Liberation: 攻击面矩阵",
+        results.append(run_step("🔥 Liberation: 攻击面矩阵",
             [str(AI_INJECT), "--matrix"],
             timeout=15))
         if args.target and "localhost" not in args.target:
             results.append(run_step(f"🔫 实弹扫描 {target}",
-                [str(SCANNER), "-t", target, "--spec", spec, "--quick"],
+                [str(SCANNER), "-t", target, "--spec", spec, "--quick"]
+                + (["--scope", args.scope] if args.scope else []),
                 timeout=60))
-    
+
     # ── Layer 6: 实弹! (--live) ──
     if args.live:
         sender_args = [str(SENDER), "-m", args.model, "--auto", str(args.count), "--live"]
         results.append(run_step(f"🔥 实弹: {args.model} ({args.count} payloads)",
             sender_args, timeout=120))
-    
+
     # ── Layer 7: Web 全自动攻击链 (--hunt) ──
     if args.hunt:
         chain_args = [str(CHAIN), "-t", args.target, "--chain", args.chain, "-c", "10"]
         results.append(run_step(f"🕷️ 全自动Web攻击: {args.chain} → {args.target}",
             chain_args, timeout=300))
-    
+
     # ── Layer 8: HTML 报告 ──
     html_path = gen_html(report_dir, results, target)
-    
+
     # 终端总结
     passed = sum(1 for r in results if r["ok"])
     print(f"\n{'═'*60}")

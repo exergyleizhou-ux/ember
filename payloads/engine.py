@@ -293,11 +293,13 @@ PAYLOADS["waf_bypass"] = {
 # ═══════════════════════════════════════════════════════════════════════
 # Payload Engine v2 — 带分类检出
 # ═══════════════════════════════════════════════════════════════════════
-import time, json, re
-from typing import Optional, List, Dict, Tuple
-from urllib.request import Request, urlopen, HTTPError
+import re
+import time
+from typing import Dict, List, Optional, Tuple
 from urllib.error import URLError
 from urllib.parse import quote
+from urllib.request import HTTPError, Request, urlopen
+
 
 class WebAttacker:
     """授权 Web 攻击引擎 — 带请求分析的 payload 发射器."""
@@ -330,26 +332,26 @@ class WebAttacker:
         """对多个端点注入一类 payload,分析响应判断是否检出."""
         if category not in PAYLOADS:
             return []
-        
+
         cat = PAYLOADS[category]
         results = []
         vectors = cat["vectors"][:12]  # 每类选前 12 个
-    
+
         for ep in endpoints:
             method = "GET" if any(kw in ep.lower() for kw in ["search", "query", "find"]) else "POST"
-            
+
             # Baseline — 先发一个安全请求
             safe_status, safe_body, safe_time = self._req(method, ep, "q=safe-test-string")
-            
+
             for vec in vectors[:6]:  # 每个 endpoint 6 个 top payload
                 if method == "GET":
                     status, body, elapsed = self._req(method, ep, params={"q": vec})
                 else:
                     status, body, elapsed = self._req(method, ep, data=f"q={vec}")
-                
+
                 # Response analysis
                 analysis = self._analyze(category, safe_body, body, safe_time, elapsed)
-                
+
                 results.append({
                     "category": category,
                     "endpoint": ep, "method": method,
@@ -360,7 +362,7 @@ class WebAttacker:
                     "hit": analysis["verdict"] != "probably_not",
                 })
                 time.sleep(0.05)
-        
+
         return results
 
     def _analyze(self, category: str, safe_body: str, injected_body: str,
@@ -435,8 +437,8 @@ class WebAttacker:
 
 # ═══════════════════════════════════════════════════════════════════════
 if __name__ == "__main__":
-    import sys
     import argparse
+    import sys
     ap = argparse.ArgumentParser(description="Ember Web 攻击引擎 v2")
     ap.add_argument("-t", "--target", default="http://localhost:4280", help="目标 URL")
     ap.add_argument("-c", "--category", default=None, help="攻击类别")
