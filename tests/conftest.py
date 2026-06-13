@@ -38,7 +38,7 @@ def engine_mod():
 
 @pytest.fixture()
 def vuln_server():
-    """启动靶机,测试结束后关闭。"""
+    """启动一个完全安全的靶机,测试结束后关闭。"""
     sys.path.insert(0, str(ROOT / "tests" / "fixtures"))
     from vulnerable_target import VulnerableServer
 
@@ -47,3 +47,24 @@ def vuln_server():
         yield server
     finally:
         server.stop()
+
+
+@pytest.fixture()
+def make_vuln_server():
+    """工厂:make_vuln_server(vulns={...}) 起一台指定漏洞开关的靶机,
+    所有起出来的实例在测试结束统一关闭。"""
+    sys.path.insert(0, str(ROOT / "tests" / "fixtures"))
+    from vulnerable_target import VulnerableServer
+
+    started = []
+
+    def _factory(vulns=frozenset()):
+        server = VulnerableServer(vulns=vulns).start()
+        started.append(server)
+        return server
+
+    try:
+        yield _factory
+    finally:
+        for server in started:
+            server.stop()

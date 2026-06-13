@@ -86,6 +86,33 @@ ember/
 └── html/               ← HTML 可视化报告
 ```
 
+## 授权护栏
+
+所有扫描入口(`run.py` / `scanner/scanner.py`)在动手前都会强制授权检查:
+本机(localhost/127.0.0.1)始终放行,**其它目标必须用 `--scope` 显式声明授权**,
+否则直接拒绝并退出。未授权扫描在多数司法辖区违法 —— 这条护栏从结构上防手滑。
+
+```bash
+# 本机自测:无需 --scope
+python3 run.py -t http://localhost:8080/api/v1
+
+# 远程目标:必须显式授权(且你需持有书面授权)
+python3 run.py -t https://staging.example.com/api/v1 --scope example.com
+```
+
+## 测试 & CI
+
+守侧(扫描器/注入引擎/网络)带完整测试,用纯标准库靶机端到端验证
+"已知漏洞必检出、健康端点不误报":
+
+```bash
+pip install -e ".[dev]"
+pytest -q          # 35 个测试
+ruff check scanner payloads network run.py tests
+```
+
+CI(`.github/workflows/ci.yml`)在每个 PR 上跑 Python 3.9/3.12 的 ruff + pytest。
+
 ## 为什么叫 Ember
 
 Pliny 的项目叫 CL4R1T4S（Claritas，拉丁语 "清晰"）。Ember 是余烬——不张扬，但持续燃烧。AI 公司不愿让你看见的指令藏在火焰背后，Ember 读灰烬里的真相。

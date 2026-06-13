@@ -146,7 +146,16 @@ def main():
                    choices=["recon","quick-scan","deep-scan","full-auto"])
     ap.add_argument("--quick", action="store_true", help="快速模式 (只跑 API auth + escalation)")
     ap.add_argument("--output", "-o", default="reports", help="报告输出目录")
+    ap.add_argument("--scope", default="", help="授权目标 allowlist(逗号分隔的主机/域名);本机始终允许")
     args = ap.parse_args()
+
+    # 授权护栏: 非本机目标必须显式授权,整条流水线都受此约束
+    sys.path.insert(0, str(SCANNER.parent))
+    from scope import UnauthorizedTargetError, parse_scope, require_authorized
+    try:
+        require_authorized(args.target, parse_scope(args.scope))
+    except UnauthorizedTargetError as e:
+        sys.exit(f"⛔ 授权检查失败:\n{e}")
 
     target = args.target.rstrip("/")
     report_dir = os.path.join(TOOLKIT, args.output)
@@ -159,6 +168,8 @@ def main():
 
     # ── Layer 1: API 扫描 ──
     scanner_args = ["-t", target, "--spec", spec]
+    if args.scope:
+        scanner_args += ["--scope", args.scope]
     if args.quick:
         scanner_args.append("--quick")
     results.append(run_step("API 鉴权 & 权限扫描", [str(SCANNER)] + scanner_args))
@@ -203,7 +214,8 @@ def main():
             timeout=15))
         if args.target and "localhost" not in args.target:
             results.append(run_step(f"🔫 实弹扫描 {target}",
-                [str(SCANNER), "-t", target, "--spec", spec, "--quick"],
+                [str(SCANNER), "-t", target, "--spec", spec, "--quick"]
+                + (["--scope", args.scope] if args.scope else []),
                 timeout=60))
 
     # ── Layer 6: 实弹! (--live) ──

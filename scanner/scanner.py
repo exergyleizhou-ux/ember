@@ -329,7 +329,16 @@ def main():
     ap.add_argument("--report", "-o", default=None, help="输出 JSON 报告")
     ap.add_argument("--quick", action="store_true", help="跳过限流和 IDOR")
     ap.add_argument("--concurrency", "-c", type=int, default=2, help="并发线程数")
+    ap.add_argument("--scope", default="", help="授权目标 allowlist(逗号分隔的主机/域名);本机始终允许")
     args = ap.parse_args()
+
+    # 授权护栏: 非本机目标必须显式授权
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    from scope import UnauthorizedTargetError, parse_scope, require_authorized
+    try:
+        require_authorized(args.target, parse_scope(args.scope))
+    except UnauthorizedTargetError as e:
+        sys.exit(f"⛔ 授权检查失败:\n{e}")
 
     # 找 spec
     if args.spec:
