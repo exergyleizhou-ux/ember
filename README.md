@@ -76,7 +76,7 @@ $ python3 ai/prompt_library.py -m Claude
 
 | 层 | 模块 | 能力 |
 |----|------|------|
-| **API 扫描** | `scanner/` (检测器注册表) | **18 个检测器,覆盖 OWASP API Top 10 (API1–API9)**:鉴权绕过 · 权限提升 · 限流 · IDOR · 信息泄露 · JWT(alg=none/空签名/未校验) · mass assignment · open redirect · SSRF(带外) · Host 头注入 · 安全响应头 · CORS · GraphQL introspection · 调试暴露 · TRACE · verbose 报错。`--list-detectors` 查看 |
+| **API 扫描** | `scanner/` (检测器注册表) | **23 个检测器**,覆盖 OWASP API Top 10 (API1–API9):鉴权绕过 · 权限提升 · 限流 · IDOR · 信息泄露 · JWT(alg=none/空签名/未校验) · mass assignment · open redirect · SSRF(带外) · Host 头注入 · 安全响应头 · CORS · GraphQL introspection · 调试暴露 · TRACE · verbose 报错;**注入家族(A03/A01)**:SQLi(报错/时间盲注) · 反射 XSS · 命令注入 · SSTI · 路径遍历。`--list-detectors` 查看 |
 | **Payload 注入** | `payloads/engine.py` | SQLi (10) · XSS (9) · JWT (3) · PathTraversal (8) · SSRF (7) |
 | **网络扫描** | `network/scan.py` | SSL/TLS 弱加密检测 · 端口暴露扫描 (PG/Redis/SSH) |
 | **LLM 应用防御(运行时)** | `examples/dual_llm/` | **dual-LLM 架构 + taint 跟踪**抗 prompt injection(运行时防御原语,守你自己的 agent);见 `docs/defense/` |
