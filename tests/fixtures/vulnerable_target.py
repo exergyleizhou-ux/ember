@@ -158,6 +158,32 @@ class _Handler(BaseHTTPRequestHandler):
             self._send(200, {"results": [], "ok": True})
             return
 
+        # ── 注入检测对照点(脆弱/安全由 vulns 开关)──
+        if path == "/xss":
+            if "xss" in self.vulns:
+                self._send(200, {"echo": q})                 # 原样回显 → 反射型 XSS
+            else:
+                self._send(200, {"echo": q.replace("<", "&lt;").replace(">", "&gt;")})
+            return
+        if path == "/ssti":
+            if "ssti" in self.vulns and "1337*1337" in q:
+                self._send(200, {"rendered": q.replace("{{1337*1337}}", "1787569")
+                                            .replace("${1337*1337}", "1787569")})
+            else:
+                self._send(200, {"rendered": q})             # 原样回显,不求值
+            return
+        if path == "/cmd":
+            if "cmdi" in self.vulns and "sleep" in q.lower():
+                time.sleep(2.0)                              # 命令注入时间盲注
+            self._send(200, {"ok": True})
+            return
+        if path == "/readfile":
+            if "path_traversal" in self.vulns and "etc/passwd" in q.replace("%2f", "/"):
+                self._send(200, {"content": "root:x:0:0:root:/root:/bin/bash"})
+            else:
+                self._send(200, {"content": "not found"})
+            return
+
         if path == "/jwt/thing":
             # AUTH-BYPASS 探测点: 默认要求 token,开关打开则无 token 也放行
             if "auth_bypass" in self.vulns or self._token():

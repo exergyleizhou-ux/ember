@@ -4,6 +4,16 @@
 
 ## [Unreleased]
 
+### 注入检测器家族(补守侧最大盲区)
+- 此前传统 Web 注入类只有 `payloads/engine` 的探测,没有 dual-tested 的守侧检测器。
+  现补 5 个主动检测器(`scanner/detectors/injection.py`,mode=http):
+  - `sqli-active`(A03,critical):报错型 + 时间盲注
+  - `xss-reflected`(A03,high):标记未编码回显
+  - `command-injection`(A03,critical):时间盲注
+  - `ssti`(A03,critical):模板求值 canary `{{1337*1337}}`→1787569
+  - `path-traversal`(A01,high):读到 /etc/passwd 特征
+- 纯分析函数单测 + 靶机双向集成(脆弱→检出、安全→不误报)。GET 参数探测;POST/body 待后续。
+
 ### LLM 防御 Wave 4(运行时可观测层)
 - `examples/dual_llm/agent_bus.py`:多 agent **运行时**审计(静态 `llm-multi-agent-message-audit`
   的运行时补充)。在 agent 间消息传递时拦一道,组合 taint + injection_guard + jailbreak_guard,

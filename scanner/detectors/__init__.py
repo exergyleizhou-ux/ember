@@ -5,7 +5,16 @@
 """
 
 # 导入各检测器模块以触发注册(顺序即默认运行顺序)
-from . import access_control, exposure, jwt, legacy, llm_static, redirect, ssrf  # noqa: E402,F401
+from . import (  # noqa: E402,F401
+    access_control,
+    exposure,
+    injection,
+    jwt,
+    legacy,
+    llm_static,
+    redirect,
+    ssrf,
+)
 from .base import Detector, get, iter_detectors, register
 
 __all__ = ["Detector", "register", "iter_detectors", "get"]
