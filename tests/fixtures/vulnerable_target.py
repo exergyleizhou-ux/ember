@@ -123,6 +123,18 @@ class _Handler(BaseHTTPRequestHandler):
         auth = self.headers.get("Authorization", "")
         return auth[7:] if auth.startswith("Bearer ") else ""
 
+    def do_TRACE(self):
+        # HTTP-METHOD 探测点: 脆弱时回显请求(XST),安全时 405
+        if "trace_method" in self.server.vulns:
+            body = f"TRACE {self.path} HTTP/1.1\r\n".encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "message/http")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+        else:
+            self._send(405, {"error": "method not allowed"})
+
     # ── 路由 ──
     def do_GET(self):
         parsed = urlparse(self.path)
@@ -191,6 +203,23 @@ class _Handler(BaseHTTPRequestHandler):
             self._send(200, {"ok": True})
             return
 
+        if path == "/openapi.json":
+            # DEBUG-EXPOSURE 探测点
+            if "debug_exposure" in self.vulns:
+                self._send(200, {"openapi": "3.0.0", "paths": {}})
+            else:
+                self._send(404, {"error": "not found"})
+            return
+
+        if path == "/error":
+            # VERBOSE-ERRORS 探测点: 脆弱时回吐 python 栈
+            if "verbose_errors" in self.vulns:
+                self._send(500, {"error": 'Traceback (most recent call last):\n  '
+                                          'File "/app/views.py", line 42, in handler'})
+            else:
+                self._send(400, {"error": "bad request"})
+            return
+
         if path == "/jwt/protected":
             # JWT 校验点: 安全时拒绝一切伪造,漏洞开关放行对应伪造
             if _jwt_accepted(self._token(), self.vulns):
@@ -242,6 +271,14 @@ class _Handler(BaseHTTPRequestHandler):
                     "user": {"id": uid},
                 }
             })
+            return
+
+        if path == "/graphql":
+            # GRAPHQL-INTROSPECTION 探测点
+            if "graphql_introspection" in self.vulns:
+                self._send(200, {"data": {"__schema": {"types": [{"name": "User"}]}}})
+            else:
+                self._send(200, {"errors": [{"message": "introspection is disabled"}]})
             return
 
         if path == "/safe":

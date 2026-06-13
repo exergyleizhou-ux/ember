@@ -4,6 +4,13 @@
 
 ## [Unreleased]
 
+### 接口暴露(P4,OWASP API8/API9)
+- `graphql-introspection`:对常见 GraphQL 路径发 introspection 查询,schema 暴露即判
+- `debug-exposure`:探测 swagger/openapi/actuator/.env/.git 等不该公开的调试路径
+- `http-method`:TRACE 被接受并回显请求(XST 风险)
+- `verbose-errors`:畸形输入触发栈/框架信息泄露
+- 至此 18 个检测器覆盖 **OWASP API Top 10 的 API1–API9**
+
 ### 输入/重定向(P3,OWASP API7)
 - `open-redirect`:常见重定向参数(next/url/redirect…)可外跳到任意域(检查 3xx Location)
 - `host-header`:伪造 Host 头被反射进正文/Location(缓存投毒 / 密码重置投毒)

@@ -253,10 +253,13 @@ class Scanner:
             return 0, {}
 
     def _raw_get(self, path: str, headers: Optional[Dict] = None,
-                 follow_redirects: bool = False) -> Tuple[int, str, Dict]:
-        """GET 并返回 (status, body, headers);默认不追随 3xx 以便检查 Location。"""
+                 follow_redirects: bool = False, method: str = "GET",
+                 body: Any = None) -> Tuple[int, str, Dict]:
+        """请求并返回 (status, body_text, headers);默认不追随 3xx 以便检查 Location。
+        返回原始文本(不做 JSON 解析),适合探测可能返回非 JSON 的任意路径。"""
         url = f"{self.target}{path}"
-        req = Request(url, method="GET")
+        data = json.dumps(body).encode() if body is not None else None
+        req = Request(url, data=data, method=method)
         for k, v in (headers or {}).items():
             req.add_header(k, v)
         opener = urlopen if follow_redirects else build_opener(_NoRedirect()).open
