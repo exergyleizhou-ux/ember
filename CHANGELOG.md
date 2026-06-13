@@ -4,6 +4,11 @@
 
 ## [Unreleased]
 
+### 对象属性级授权(P2,OWASP API6)
+- `mass-assignment`:向写端点注入特权字段(role/is_admin/balance 等),
+  若被服务端接受并回显即判漏洞。纯反射判定单测 + 靶机双向集成测试。
+- 注:对象级授权(BOLA/API1)已由 `idor` 检测器覆盖。
+
 ### JWT 鉴权检测器(P1,OWASP API2)
 - `jwt-alg-none`:`alg=none` 伪造 token 被接受
 - `jwt-unsigned`:空签名 token 被接受
