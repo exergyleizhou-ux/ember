@@ -226,6 +226,21 @@ class Scanner:
         uid = d.get("user", {}).get("id", "")
         return tok, uid, email
 
+    def acquire_token(self, login_url: str, body: Any, method: str = "POST",
+                      token_path: Optional[str] = None) -> Optional[str]:
+        """走登录流取 token,写入 self.token 并返回。失败返回 None。"""
+        from auth import extract_token
+        s, resp, _ = self._req(method, login_url, body)
+        if not (200 <= s < 300):
+            log.warning("登录失败 status=%s url=%s", s, login_url)
+            return None
+        tok = extract_token(resp, token_path)
+        if tok:
+            self.token = tok
+        else:
+            log.warning("登录成功但未能从响应提取 token(试试 --token-path)")
+        return tok
+
     def _add(self, severity: str, check: str, path: str, method: str, detail: str, evidence: str = ""):
         """记录漏洞."""
         with self._lock:
@@ -299,6 +314,10 @@ def main():
     ap.add_argument("--retries", type=int, default=2, help="连接失败的重试次数")
     ap.add_argument("--scope", default="", help="授权目标 allowlist(逗号分隔的主机/域名);本机始终允许")
     ap.add_argument("--token", default=None, help="有效 JWT(供 JWT 伪造检测器作基准)")
+    ap.add_argument("--login-url", default=None, help="登录端点(自动取 token,免去手填 --token)")
+    ap.add_argument("--login-body", default=None, help="登录请求体(JSON 字符串)")
+    ap.add_argument("--login-method", default="POST", help="登录方法(默认 POST)")
+    ap.add_argument("--token-path", default=None, help="响应里 token 的点路径(如 data.tokens.access_token);留空则自动发现")
     ap.add_argument("--verbose", "-v", action="store_true", help="输出每个请求的 debug 日志")
     ap.add_argument("--list-detectors", action="store_true", help="列出所有检测器并退出")
     ap.add_argument("--enable", default="", help="只跑这些检测器(逗号分隔的 name)")
@@ -351,6 +370,15 @@ def main():
                       rate=args.rate, retries=args.retries)
     scanner.public, scanner.jwt, scanner.admin, scanner.rated = public, jwt, admin, rated
     scanner.token = args.token
+
+    # 认证流自动取 token(优先于手填 --token)
+    if args.login_url:
+        login_body = json.loads(args.login_body) if args.login_body else {}
+        tok = scanner.acquire_token(args.login_url, login_body, args.login_method, args.token_path)
+        if tok:
+            print(f"🔑 已自动获取 token: {tok[:24]}…")
+        else:
+            print("⚠️  认证流取 token 失败(JWT 检测器将跳过)")
 
     # 选择启用的检测器: --enable 白名单优先,其次 --disable 黑名单,--quick 跳过慢的
     enable = {x.strip() for x in args.enable.split(",") if x.strip()}
