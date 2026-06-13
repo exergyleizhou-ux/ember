@@ -60,3 +60,11 @@ class CodeExecDetector(_StaticLLMDetector):
     owasp = "LLM05:2025"      # Improper Output Handling
     atlas = "AML.T0050"      # Command and Scripting Interpreter
     severity = "critical"    # LLM 输出被自动执行 = RCE
+
+
+@register
+class MultiAgentMessageDetector(_StaticLLMDetector):
+    name = "llm-multi-agent-message-audit"
+    owasp = "LLM01:2025"
+    atlas = "AML.T0061"      # LLM Prompt Self-Replication
+    severity = "high"        # 未净化数据跨 agent 传递 = 注入蠕虫面

@@ -76,6 +76,27 @@ def test_code_exec_sanitized_not_flagged(at):
     assert "llm-code-exec" not in rules(at, code)
 
 
+@pytest.mark.parametrize("sink", ["dispatch(o)", "send_to_agent(o)",
+                                  "publish(o)", "handoff(o)"])
+def test_multi_agent_message_detected_from_llm(at, sink):
+    # LLM 输出未净化转发给另一个 agent = 自我复制/蠕虫面
+    code = f"def h():\n    o = llm.invoke(p)\n    {sink}\n"
+    assert "llm-multi-agent-message-audit" in rules(at, code)
+
+
+def test_multi_agent_message_detected_from_external(at):
+    code = "def h():\n    d = fetch_url(u)\n    send_to_agent(d)\n"
+    assert "llm-multi-agent-message-audit" in rules(at, code)
+
+
+def test_multi_agent_sanitized_not_flagged(at):
+    code = ("def h():\n"
+            "    o = llm.invoke(p)\n"
+            "    safe = schema_extract(o, S)\n"
+            "    send_to_agent(safe)\n")
+    assert "llm-multi-agent-message-audit" not in rules(at, code)
+
+
 # ── 无误报 ──
 def test_sanitized_not_flagged(at):
     code = ("def h():\n"

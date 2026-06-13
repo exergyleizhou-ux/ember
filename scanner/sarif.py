@@ -23,9 +23,14 @@ def severity_to_level(severity: str) -> str:
     return _LEVEL.get((severity or "").lower(), "note")
 
 
-def to_sarif(report: dict, tool_version: str = "0.1.0") -> dict:
-    """report(scanner.report() 输出)→ SARIF 2.1.0。"""
+def to_sarif(report: dict, tool_version: str = "0.1.0", detector_meta: dict = None) -> dict:
+    """report(scanner.report() 输出)→ SARIF 2.1.0。
+
+    detector_meta: 可选,{check_name: {"owasp": ..., "atlas": ...}};
+    若提供,则把 OWASP/ATLAS 标签写进规则的 properties.tags,供 SIEM/Code Scanning 消费。
+    """
     findings = report.get("findings", [])
+    meta = detector_meta or {}
 
     # 去重收集规则(按 check)
     rules = []
@@ -35,11 +40,20 @@ def to_sarif(report: dict, tool_version: str = "0.1.0") -> dict:
         if rule_id in seen:
             continue
         seen.add(rule_id)
-        rules.append({
+        m = meta.get(rule_id, {})
+        tags = [t for t in (m.get("owasp"), m.get("atlas")) if t]
+        rule = {
             "id": rule_id,
             "name": rule_id.replace("-", "_"),
             "shortDescription": {"text": f"Ember check: {rule_id}"},
-        })
+        }
+        if tags or m:
+            rule["properties"] = {
+                "tags": tags,
+                "owasp": m.get("owasp", ""),
+                "atlas": m.get("atlas", ""),
+            }
+        rules.append(rule)
 
     results = []
     for f in findings:
