@@ -1,0 +1,93 @@
+{
+  "target": "OWASP Juice Shop (localhost:3000)",
+  "date": "2026-06-13",
+  "findings": [
+    {
+      "severity": "CRITICAL",
+      "type": "SQL Injection",
+      "endpoint": "/rest/products/search?q=",
+      "detail": "UNION SELECT dumped 20+ users including admin credentials",
+      "payload": "')) UNION SELECT id,email,password,role,5,6,7,8,9 FROM Users--"
+    },
+    {
+      "severity": "CRITICAL",
+      "type": "Admin Takeover",
+      "endpoint": "/rest/user/login",
+      "detail": "Admin password was admin123 (MD5 hash from injection, trivially cracked)"
+    },
+    {
+      "severity": "HIGH",
+      "type": "Unauthenticated Admin Page",
+      "endpoint": "/administration",
+      "detail": "Admin page accessible without authentication"
+    },
+    {
+      "severity": "HIGH",
+      "type": "Unauthenticated API Access",
+      "endpoint": "/api/Challenges",
+      "detail": "Scoreboard/challenges API publicly accessible"
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Path Traversal",
+      "endpoint": "/ftp/",
+      "detail": "Arbitrary file read from /ftp/ directory"
+    },
+    {
+      "severity": "MEDIUM",
+      "type": "Weak Password Policy",
+      "endpoint": "/api/Users/",
+      "detail": "No password complexity requirements, MD5 hashing"
+    },
+    {
+      "severity": "INFO",
+      "type": "API Documentation Exposure",
+      "endpoint": "/openapi.yaml, /swagger.json, /docs",
+      "detail": "Full API blueprint publicly available"
+    }
+  ],
+  "oasis_audit": [
+    {
+      "severity": "CRITICAL",
+      "type": "Hardcoded JWT Secret",
+      "file": "internal/config/config.go:57",
+      "detail": "default JWT_SECRET = dev-insecure-change-me"
+    },
+    {
+      "severity": "CRITICAL",
+      "type": "Denylist Fail-Open",
+      "file": "internal/modules/auth/service.go:179",
+      "detail": "Redis error -> allows refresh token replay"
+    },
+    {
+      "severity": "CRITICAL",
+      "type": "Rate Limiter Fail-Open",
+      "file": "internal/platform/middleware/ratelimit.go:33",
+      "detail": "Redis outage disables all rate limiting"
+    },
+    {
+      "severity": "HIGH",
+      "type": "Public Metrics Endpoint",
+      "file": "internal/server/server.go",
+      "detail": "/metrics exposes Prometheus data publicly"
+    },
+    {
+      "severity": "HIGH",
+      "type": "Full API Blueprint Public",
+      "file": "internal/server/server.go",
+      "detail": "/docs/openapi.yaml serves 59KB complete API spec"
+    },
+    {
+      "severity": "HIGH",
+      "type": "Environment Leak via /ping",
+      "file": "internal/server/server.go:271",
+      "detail": "GET /api/v1/ping returns {env} — leaks deployment stage"
+    },
+    {
+      "severity": "INFO",
+      "type": "Security Headers Present",
+      "file": "internal/platform/middleware/security.go",
+      "detail": "HSTS, CSP, X-Frame-Options correctly configured"
+    }
+  ]
+}
