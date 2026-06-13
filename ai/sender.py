@@ -268,7 +268,17 @@ if __name__ == "__main__":
                    help="使用新武器库生成攻击载荷")
     ap.add_argument("--weapon-payload", type=str, default="bypass security restrictions",
                    help="武器化 base prompt")
+    ap.add_argument("--i-am-authorized", action="store_true",
+                   help="实弹门: 确认你对目标模型/系统拥有授权(--live 必需)")
     args = ap.parse_args()
+
+    # 实弹护栏: --live 朝真实模型开火前必须显式授权(防误用 / 问责)
+    if args.live:
+        import os as _os
+        import sys as _sys
+        _sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
+        from safety_gate import enforce_live
+        enforce_live(args.i_am_authorized, "ai/sender.py", args.model)
 
     sender = LiveSender(args.model)
 
