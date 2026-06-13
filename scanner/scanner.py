@@ -137,6 +137,7 @@ class Scanner:
         self.retries = retries
         self.buyer_token: Optional[str] = None
         self.ops_token: Optional[str] = None
+        self.token: Optional[str] = None   # 有效 JWT 基准(--token),供 JWT 检测器
         self.findings: List[Dict] = []
         self.stats = {"total": 0, "passed": 0, "failed": 0, "errors": 0}
         # 端点分组(由 main 在装载 spec 后填充;检测器从 ctx 读取)
@@ -270,6 +271,7 @@ def main():
     ap.add_argument("--rate", type=float, default=0.0, help="每秒最大请求数(限速,0=不限),防止打挂目标")
     ap.add_argument("--retries", type=int, default=2, help="连接失败的重试次数")
     ap.add_argument("--scope", default="", help="授权目标 allowlist(逗号分隔的主机/域名);本机始终允许")
+    ap.add_argument("--token", default=None, help="有效 JWT(供 JWT 伪造检测器作基准)")
     ap.add_argument("--verbose", "-v", action="store_true", help="输出每个请求的 debug 日志")
     ap.add_argument("--list-detectors", action="store_true", help="列出所有检测器并退出")
     ap.add_argument("--enable", default="", help="只跑这些检测器(逗号分隔的 name)")
@@ -321,6 +323,7 @@ def main():
     scanner = Scanner(args.target, concurrency=args.concurrency,
                       rate=args.rate, retries=args.retries)
     scanner.public, scanner.jwt, scanner.admin, scanner.rated = public, jwt, admin, rated
+    scanner.token = args.token
 
     # 选择启用的检测器: --enable 白名单优先,其次 --disable 黑名单,--quick 跳过慢的
     enable = {x.strip() for x in args.enable.split(",") if x.strip()}

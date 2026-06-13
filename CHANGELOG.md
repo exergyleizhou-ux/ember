@@ -4,6 +4,13 @@
 
 ## [Unreleased]
 
+### JWT 鉴权检测器(P1,OWASP API2)
+- `jwt-alg-none`:`alg=none` 伪造 token 被接受
+- `jwt-unsigned`:空签名 token 被接受
+- `jwt-sig-not-verified`:篡改 payload(提权)+ 原签名被接受(服务端未校验签名)
+- 需 `--token <有效 JWT>` 作伪造基准;无 token 则跳过
+- 纯伪造逻辑 `scanner/detectors/jwt_forge.py` 单测;靶机签真 HS256 JWT 端到端双向测试
+
 ### 检测器注册表(P0,为 OWASP API Top 10 覆盖铺路)
 - 新增插件化检测器注册表(`scanner/detectors/`):每个检测器是声明 name/owasp/severity、
   实现 `run(ctx)` 的小类,自动注册。现有 7 项检查(auth-bypass/ops-escalate/rate-bypass/
