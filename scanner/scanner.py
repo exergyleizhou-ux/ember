@@ -42,6 +42,19 @@ except ImportError:
 log = logging.getLogger("ember.scanner")
 
 
+def _safe_json(raw) -> Dict:
+    """把响应体解析成 dict;非 JSON(如纯文本 404 / HTML 错误页)不崩,
+    返回 {"_raw": text} 以便上层仍能检查内容。"""
+    if not raw:
+        return {}
+    try:
+        v = json.loads(raw)
+        return v if isinstance(v, dict) else {"_value": v}
+    except (ValueError, TypeError):
+        text = raw.decode(errors="replace") if isinstance(raw, (bytes, bytearray)) else str(raw)
+        return {"_raw": text}
+
+
 # ═══════════════════════════════════════════════════════════════════════
 # 已知限流配置 (对应各模块 router.go 中的 RateLimitConfig)
 # ═══════════════════════════════════════════════════════════════════════
@@ -189,12 +202,12 @@ class Scanner:
                 resp = urlopen(req, timeout=self.timeout)
                 raw = resp.read()
                 log.debug("%s %s → %s", method, path, resp.status)
-                return resp.status, (json.loads(raw) if raw else {}), time.monotonic() - t0
+                return resp.status, _safe_json(raw), time.monotonic() - t0
             except HTTPError as e:
                 # HTTP 错误是真实响应,不重试
                 raw = e.read()
                 log.debug("%s %s → %s (http)", method, path, e.code)
-                return e.code, (json.loads(raw) if raw else {}), time.monotonic() - t0
+                return e.code, _safe_json(raw), time.monotonic() - t0
             except URLError as e:
                 # 连接级错误: 退避重试,扛网络抖动
                 if attempt < self.retries:
@@ -216,11 +229,18 @@ class Scanner:
         return opath
 
     def _register(self, label: str) -> Tuple[str, str, str]:
-        """注册用户 → (token, user_id, account)."""
+        """注册用户 → (token, user_id, account)。被限流(429)时退避重试。"""
         email = f"scan-{label}-{uuid.uuid4().hex[:6]}@sec.test"
-        s, b, _ = self._req("POST", "/auth/register", {
-            "account": email, "account_type": "email", "password": "Scanner123!",
-        })
+        body = {"account": email, "account_type": "email", "password": "Scanner123!"}
+        s, b = 0, {}
+        for attempt in range(4):
+            s, b, _ = self._req("POST", "/auth/register", body)
+            if s != 429:
+                break
+            # 目标对注册端点限流(防爬),退避后重试,而不是直接崩
+            wait = 3.0 * (attempt + 1)
+            log.info("注册被限流(429),%.0fs 后重试 (%d/4)", wait, attempt + 1)
+            time.sleep(wait)
         if s != 200:
             raise RuntimeError(f"注册失败({label}) status={s}: {b}")
         d = b.get("data", {})
@@ -431,11 +451,17 @@ def main():
             continue
         selected.append(d)
 
-    try:
-        for d in selected:
+    for d in selected:
+        try:
             d.run(scanner)
-    except KeyboardInterrupt:
-        print("\n⏹  用户中断")
+        except KeyboardInterrupt:
+            print("\n⏹  用户中断")
+            break
+        except Exception as e:
+            # 单个检测器出错不应中断整轮扫描(仍出报告/SARIF)
+            log.warning("检测器 %s 出错,跳过: %s", d.name, e)
+            print(f"⚠️  检测器 {d.name} 出错,跳过: {e}")
+            scanner.stats["errors"] += 1
 
     # 终端报告
     rep = scanner.report()

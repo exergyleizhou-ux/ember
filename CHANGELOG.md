@@ -4,6 +4,14 @@
 
 ## [Unreleased]
 
+### 扫描健壮性(实扫真实后端发现并修复)
+- **单检测器异常隔离**:`main()` 一个检测器崩溃不再中断整轮扫描,仍出报告/SARIF。
+- **`_register` 429 退避**:目标对注册端点限流时退避重试,而不是直接抛异常崩掉。
+- **`_req` 非 JSON 容错**(`_safe_json`):纯文本 404 / HTML 错误页不再让 `json.loads` 崩,
+  返回 `{"_raw": text}`。
+- **rate-bypass 鉴权感知**:带 `ctx.token` 测 auth 后面的限流;端点全程返回 401/403 且无
+  token 时视为"受保护、测不到",不再误报"限流缺失"。
+
 ### 攻击入口授权护栏(防误用 / 问责)
 - 新增 `safety_gate.py`:把守侧的授权逻辑接到攻击入口。纯约束 + 操作者日志,不增强攻击力。
 - 接入:`web/chain.py` / `web/spider.py` / `web/analyzer.py` 加 `--scope`,非本机目标
