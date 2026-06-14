@@ -96,11 +96,14 @@ class RateLimitDetector(Detector):
             limit = rl.get("limit", 10)
             reason = rl.get("reason", "?")
             p = ctx._resolve(ep["path"])
+            token = getattr(ctx, "token", None)  # 有 token 则带上,测 auth 后面的限流
             body = {"note": "scan"} if ep["method"] in ("POST", "PUT") else None
             ctx.stats["total"] += 1
             hit = False
+            last = 0
             for _ in range(limit + 1):
-                s, _, _ = ctx._req(ep["method"], p, body)
+                s, _, _ = ctx._req(ep["method"], p, body, token=token)
+                last = s
                 if s == 429:
                     hit = True
                     break
@@ -108,6 +111,10 @@ class RateLimitDetector(Detector):
                     break
                 time.sleep(0.06)
             if hit:
+                ctx.stats["passed"] += 1
+            elif last in (401, 403) and not token:
+                # 端点被鉴权挡住(限流在 authMW 之后),无 token 测不到 → 不算缺失
+                print(f"   ⏭  {p} 需鉴权(全程 {last}),限流在认证之后,带 --token/--login 才能测")
                 ctx.stats["passed"] += 1
             else:
                 ctx._add("medium", self.name, p, ep["method"],
